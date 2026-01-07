@@ -57,13 +57,32 @@ Describe weights
 3. Generalizibility: check if TASMD below 0.1, comparing those with recorded treatment decision versus all eligible patients
 
 ## 4 - Descriptives
+1. Make a histogram of time until dialysis
+2. Make a Table describing patient characteristics for the entire eligible cohort before and after selection weighting
+3. Make a Table describing patient characteristics for the entire eligible cohort before and after treatment weighting
+4. Create love plots if SMD and TASMD below 0.1 after weighting
+5. Summarize the number of decisions
 
 ## 5 - ATE
+Compute average treatment effects
+1. Risks (i.e., Kaplan-Meier estimates)
+2. Risk difference
+3. Risk ratio
+4. RMST (i.e., area under Kaplan-Meier estimates)
+5. Difference in RMST
+6. Hazard ratio
 
 ## 6 - SA positivity
+Compare estimates of average treatment effect when applying overlap weighting, Crump trimming, Sturmer traimming, or Walker trimming.
 
 ## 7 - Subgroup analysis
+Perform subgroup analysis for age, eGFR, and acute kidney injury.
 
 ## 8 - Continuous HTE
+1. Fit a risk model using age, eGFR, malignancies, diabetes mellitus, ischemic heart disease, valvular heart disase, peripheral vascular disease, sex, and albumin.
+2. Predict risk of mortality for each individual.
+3. Fit a model with the outcome all-cause moratality, and predictors treatment, predicted mortality risk, and its interaction.
+4. For every level of predicted mortality risk, estimate risk difference, difference in RMST, and hazard ratio.
 
 ## 9 - Competing risk time-to-dialysis
+Some patients choosing dialysis do not immediately initiate dialysis. To estimate how much time patients spend in dialysis state in the two years following their decision. For those choosing dialysis, we fit a multi-state illness-death model with the states "Alive without dialysis", "Dialysis", and "Death".
