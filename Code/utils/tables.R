@@ -1,0 +1,332 @@
+# Define the stand_diff function
+stand_diff <- function(pT, pC) {
+  d <- (pT - pC) / (sqrt((pT * (1 - pT) + pC * (1 - pC)) / 2))
+  return(d)
+}
+
+# Helper: Extract % value inside parentheses from strings like "35 (12)"
+extract_proportion <- function(entry) {
+  match <- regmatches(entry, regexpr("\\(([^)]+)\\)", entry))
+  if (length(match) > 0) {
+    return(as.numeric(sub("\\(([^)]+)\\)", "\\1", match)))
+  } else {
+    return(NA)
+  }
+}
+
+# Function to compute SMD for each category of a categorical variable
+create_baseline_table <- function(data,
+                                  id_name, 
+                                  weights = NULL,
+                                  vars,
+                                  categoricalVars,
+                                  IQRVars = NULL,
+                                  treatmentColumn = NULL,
+                                  treatmentLabel = NULL,
+                                  controlLabel,
+                                  tableCaption,
+                                  tableRowLabels = NA) {
+  # extract IDs
+  data <- copy(data)
+  data[, ID := get(id_name)]
+  
+  #-----------------------------
+  # Create overall baseline table (weighted or unweighted)
+  #-----------------------------
+  if (is.null(weights)) {
+    table_overall <- tableone::CreateTableOne(
+      vars = vars,
+      data = data,
+      factorVars = categoricalVars,
+      includeNA = TRUE
+    )
+  } else {
+    weighted_baseline <- survey::svydesign(ids = ~ ID,
+                                           weights = ~ weights,
+                                           data = data)
+    table_overall <- tableone::svyCreateTableOne(
+      vars = vars,
+      data = weighted_baseline,
+      factorVars = categoricalVars,
+      includeNA = TRUE
+    )
+  }
+  
+  # Correctly specify decimal arguments (catDigits etc.)
+  table_overall <- print(
+    table_overall,
+    printToggle = FALSE,
+    nonnormal = IQRVars,
+    noSpaces = TRUE,
+    catDigits = 1,
+    contDigits = 1,
+    pDigits = 3,
+    format = "fp"
+  )
+  table_overall <- as.matrix(table_overall)
+  table_overall
+  
+  # Optional row labels
+  if (!is.null(tableRowLabels) && length(tableRowLabels) > 1) {
+    row.names(table_overall) <- tableRowLabels
+  }
+  colnames(table_overall) <- c("Overall")
+  
+  #-----------------------------
+  # Stratified baseline table by treatment group (if provided)
+  #-----------------------------
+  if (!is.null(treatmentColumn)) {
+    if (is.null(weights)) {
+      table_stratified <- tableone::CreateTableOne(
+        vars = vars,
+        data = data,
+        factorVars = categoricalVars,
+        strata = treatmentColumn
+      )
+    } else {
+      weighted_baseline <- survey::svydesign(ids = ~ ID,
+                                             weights = ~ weights,
+                                             data = data)
+      table_stratified <- tableone::svyCreateTableOne(
+        vars = vars,
+        data = weighted_baseline,
+        factorVars = categoricalVars,
+        strata = treatmentColumn
+      )
+    }
+    
+    # Correctly specify decimal arguments (catDigits etc.)
+    table_stratified <- print(
+      table_stratified,
+      printToggle = FALSE,
+      nonnormal = IQRVars,
+      noSpaces = TRUE,
+      catDigits = 1,
+      contDigits = 1,
+      pDigits = 3,
+      smd = TRUE
+    )
+    
+    # Keep treatment, control, and SMD columns
+    table_stratified <- as.matrix(table_stratified[, c(2, 1, 5)])
+    
+    # Optional row labels
+    if (!is.null(tableRowLabels) && length(tableRowLabels) > 1) {
+      row.names(table_stratified) <- tableRowLabels
+    }
+    
+    colnames(table_stratified) <- c(treatmentLabel, controlLabel, "SMD")
+    
+    #-----------------------------
+    # Handle SMD values
+    #-----------------------------
+    # 1. Extract numeric SMDs from the table
+    SMDs <- table_stratified[which(table_stratified[, "SMD"] != ""), "SMD"]
+    smd_table <- suppressWarnings(as.numeric(SMDs))
+    smd_table[which(SMDs == "<0.001")] <- 0
+    names(smd_table) <- names(SMDs)
+    
+    # 2. Compute categorical SMDs manually using extracted proportions
+    smd_values <- sapply(1:nrow(table_stratified), function(i) {
+      treatment_entry <- table_stratified[i, treatmentLabel]
+      control_entry <- table_stratified[i, controlLabel]
+      
+      pT <- extract_proportion(treatment_entry) / 100
+      pC <- extract_proportion(control_entry) / 100
+      
+      if (!is.na(pT) && !is.na(pC)) {
+        return(stand_diff(pT, pC))  # user-defined function
+      } else {
+        return(NA)
+      }
+    })
+    smd_values <- round(smd_values, 3)
+    
+    # 3. Merge manual SMDs and existing ones
+    existing_smd <- suppressWarnings(as.numeric(table_stratified[, "SMD"]))
+    new_smd <- ifelse(is.na(existing_smd), smd_values, existing_smd)
+    table_stratified[, "SMD"] <- fmt(new_smd, 3)
+    
+    # replace NA SMD by empty string
+    table_stratified[which(table_stratified == "NA")] <- ""
+    
+    #-----------------------------
+    # Combine overall + stratified tables
+    #-----------------------------
+    table_1 <- cbind(table_overall, table_stratified)
+    colnames(table_1) <- c("Overall", treatmentLabel, controlLabel, "SMD")
+    
+  } else {
+    # If no treatment column, only overall table
+    table_1 <- table_overall
+    colnames(table_1) <- c("Overall")
+    smd_table <- NA
+  }
+  
+  #-----------------------------
+  # Pretty print using knitr::kable
+  #-----------------------------
+  formatted_table <- knitr::kable(table_1,
+                                  align = "c",
+                                  caption = as.character(tableCaption))
+  
+  #-----------------------------
+  # Return both formatted and raw data
+  #-----------------------------
+  return(list(
+    formatted_table = formatted_table,
+    raw_table = table_1,
+    smd_table = smd_table
+  ))
+}
+
+create_table_with_ci <- function(data_absolute_risks,
+                                 data_column_headers = c("Treatment (%)",
+                                                         "Control (%)",
+                                                         "Risk difference (%)",
+                                                         "Risk ratio"),
+                                 data_decimals = 2,
+                                 row_labels_header = "Time (months)",
+                                 row_labels = "row_labels",
+                                 row_labels_decimals = 0,
+                                 table_caption = "Absolute risks of death",
+                                 .extension_mean = "_estimate",
+                                 .extension_low_CI = "_conf.low",
+                                 .extension_high_CI = "_conf.high") {
+  # Get column names without mean/CI extensions
+  mean_columns <- grep(.extension_mean, colnames(data_absolute_risks), value = TRUE)
+  column_names <- gsub(.extension_mean, "", mean_columns)
+  
+  # For each variable, format mean and confidence intervals
+  table_df <- data_absolute_risks
+  for (column in column_names) {
+    table_df$mean <- table_df[[paste0(column, .extension_mean)]]
+    table_df$low_CI <- table_df[[paste0(column, .extension_low_CI)]]
+    table_df$high_CI <- table_df[[paste0(column, .extension_high_CI)]]
+    
+    table_df[, formatted := fmt_ci(mean, low_CI, high_CI, digits = data_decimals)]
+    table_df[[column]] <- table_df$formatted
+  }
+  table_df <- table_df |> select(column_names)
+  
+  # Add labels
+  colnames(table_df) <- data_column_headers
+  table_df[[row_labels_header]] <- round(data_absolute_risks[[row_labels]], digits = row_labels_decimals)
+  table_df <- table_df[, c(ncol(table_df), 1:(ncol(table_df) - 1))]
+  
+  # Create table
+  formatted_table <- knitr::kable(table_df,
+                                  align = "c",
+                                  caption = as.character(table_caption))
+  
+  return(list(raw_table = table_df, formatted_table = formatted_table))
+}
+
+# Weighted Variance Function
+# Formula: sum(w * (x - mu)^2) / (sum(w) - sum(w^2)/sum(w))
+# Note: If all w=1, this reduces to sum(x-mu)^2 / (N-1), which is standard var()
+calc_wvar <- function(x, w, wm) {
+  sum(w * (x - wm)^2) / (sum(w) - sum(w^2)/sum(w))
+}
+
+# Helper: Weighted Covariance Matrix & Means
+get_wstats <- function(v, w, levs) {
+  if(length(v) == 0) return(NULL)
+  
+  # Dummy Matrix (rows=obs, cols=levels)
+  mat <- t(sapply(v, function(x) as.numeric(levs == x)))
+  if(nrow(mat) == 1) mat <- t(mat)
+  colnames(mat) <- levs
+  
+  # Remove last column (k-1 degrees of freedom)
+  if (ncol(mat) > 1) mat <- mat[, -ncol(mat), drop = FALSE]
+  
+  # Weighted Means (Proportions)
+  w_props <- colSums(mat * w) / sum(w)
+  
+  # Center matrix for covariance calc
+  mat_centered <- sweep(mat, 2, w_props, "-")
+  
+  # Weighted Covariance: (X' W X) / (sum(w) - correction)
+  mat_weighted <- mat_centered * sqrt(w) 
+  CovMat <- crossprod(mat_weighted)
+  denom <- sum(w) - (sum(w^2) / sum(w))
+  
+  return(list(p = w_props, cov = CovMat / denom))
+}
+
+calculate_smd <- function(vec1, vec2, w1 = NULL, w2 = NULL) {
+  
+  # --- 1. Robust Input Handling ---
+  # Convert inputs to simple vectors to handle data.table columns or lists
+  vec1 <- unlist(as.vector(vec1))
+  vec2 <- unlist(as.vector(vec2))
+  
+  # --- 2. Handle Weights ---
+  # If weights are missing (NULL), assign 1 to everyone (Unweighted mode)
+  if (is.null(w1)) w1 <- rep(1, length(vec1))
+  else w1 <- unlist(as.vector(w1))
+  
+  if (is.null(w2)) w2 <- rep(1, length(vec2))
+  else w2 <- unlist(as.vector(w2))
+  
+  # --- 3. Clean NAs (Synchronized) ---
+  # Remove observations where either Data OR Weight is NA
+  valid1 <- !is.na(vec1) & !is.na(w1)
+  vec1 <- vec1[valid1]; w1 <- w1[valid1]
+  
+  valid2 <- !is.na(vec2) & !is.na(w2)
+  vec2 <- vec2[valid2]; w2 <- w2[valid2]
+  
+  # Stop if empty
+  if (length(vec1) < 2 || length(vec2) < 2) return(NA)
+  
+  # --- 4. Logic Switch: Numeric vs Categorical ---
+  is_numeric <- is.numeric(vec1) && is.numeric(vec2)
+  
+  if (is_numeric) {
+    # === A. CONTINUOUS VARIABLES ===
+    
+    # Weighted Mean
+    wm1 <- sum(vec1 * w1) / sum(w1)
+    wm2 <- sum(vec2 * w2) / sum(w2)
+    
+    # Weighted Variance
+    wv1 <- calc_wvar(vec1, w1, wm1)
+    wv2 <- calc_wvar(vec2, w2, wm2)
+    
+    # Pooled SD
+    pooled_sd <- sqrt((wv1 + wv2) / 2)
+    
+    # SMD
+    smd <- abs(wm1 - wm2) / pooled_sd
+    
+  } else {
+    # === B. CATEGORICAL VARIABLES (Mahalanobis) ===
+    
+    v1_char <- as.character(vec1)
+    v2_char <- as.character(vec2)
+    all_levs <- sort(unique(c(v1_char, v2_char)))
+    
+    res1 <- get_wstats(v1_char, w1, all_levs)
+    res2 <- get_wstats(v2_char, w2, all_levs)
+    
+    if (is.null(res1) || is.null(res2)) return(NA)
+    
+    # Pooled Covariance
+    S_pooled <- (res1$cov + res2$cov) / 2
+    
+    # Mahalanobis Distance
+    diff_p <- res1$p - res2$p
+    
+    # Calculate D^2
+    dist_sq <- tryCatch({
+      t(diff_p) %*% solve(S_pooled) %*% diff_p
+    }, error = function(e) return(NA))
+    
+    smd <- sqrt(abs(dist_sq))
+    smd <- as.numeric(smd)
+  }
+  
+  return(smd)
+}
