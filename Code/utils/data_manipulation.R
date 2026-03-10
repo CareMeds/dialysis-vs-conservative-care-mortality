@@ -53,17 +53,21 @@ retrieve_past_info <- function(dt,
   )]
   
   # Subset rows where this variable is NA
-  missing_sub <- dt[is.na(get(var_name)), .(id = get(id_name), visit_date = get(date_name))]
+  missing_sub <- dt[is.na(get(var_name)), .(id = get(id_name), 
+                                            visit_date = get(date_name))]
   
-  # Rolling join: find most recent value within 1 year before visit_date
-  filled <- dict_sub[missing_sub, on = .(id, visit_date), roll = max_roll_days]
+  # Rolling join: find most recent value within max_roll_days before visit_date
+  filled <- dict_sub[missing_sub, 
+                     on = .(id, visit_date),
+                     roll = max_roll_days]
   
   # Update with filled values
   dt[is.na(get(var_name)), (var_name) := filled$value]
   
   # set remaining NA to 0
   if (setNA) {
-    dt[, (var_name) := lapply(.SD, \(x) fifelse(is.na(x), 0, x)), .SDcols = var_name]
+    dt[, (var_name) := lapply(.SD, \(x) fifelse(is.na(x), 0, x)),
+       .SDcols = var_name]
   }
   
   return(dt)
@@ -114,13 +118,14 @@ add_bday_rows <- function(dt,
                 (visit_before & died_after), id]
   
   # add xth birthday row
-  bday_rows <- dt[id %in% eligible_bday, if (!any(visit_date == bday[1]))
-    .(
-      visit_date = bday[1],
-      bday = bday[1],
-      birthdate = birthdate[1],
-      date_of_death = date_of_death[1]
-    ), by = id]
+  bday_rows <- dt[id %in% eligible_bday, 
+                  if (!any(visit_date == bday[1]))
+                    .(
+                      visit_date = bday[1],
+                      bday = bday[1],
+                      birthdate = birthdate[1],
+                      date_of_death = date_of_death[1]
+                      ), by = id]
   
   # add rows to original data
   dt_added_bday <- rbind(dt, bday_rows, fill = TRUE)
@@ -137,6 +142,7 @@ add_bday_rows <- function(dt,
   setnames(dt_added_bday, "visit_date", date_name)
   setnames(dt_added_bday, "birthdate", birthdate_name)
   setnames(dt_added_bday, "date_of_death", death_name)
+  
   
   return(dt_added_bday)
 }

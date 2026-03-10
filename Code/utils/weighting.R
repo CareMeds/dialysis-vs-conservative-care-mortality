@@ -38,9 +38,19 @@ filter_terms_from_formula <- function(formula, exclude_vars) {
   stats::reformulate(filtered_rhs, response = lhs)
 }
 
+# whenever no weights can be found, i.e., in bootstrap, continue
+safe_sbw <- function(...) {
+  tryCatch(
+    sbw::sbw(...),
+    error = function(e) NULL
+  )
+}
+
+# obtain weights
 create_weights <- function(data,
                            elig_cohort = NULL,
                            model_PS,
+                           model_S = NULL,
                            w_meth = "IPTW",
                            catvar = NULL,
                            contvar = NULL,
@@ -85,89 +95,17 @@ create_weights <- function(data,
   
     # predict probability of being in eligible cohort for each individual in the analysis data
     if (w_meth == "IPSW") {
-      # prob_sel <- predict(model_S, newdata = data, type = "response")
-      # IPSW_weights <- (1 - prob_sel) / prob_sel
+      # fit selection model (as you already did)
+      fit_S <- stats::glm(model_S, family = binomial(), data = elig_cohort)
       
-      # encode factors
-      elig_cohort_num <- encode_factors(dt = elig_cohort,
-                                        catvar = catvar,
-                                        contvar = contvar,
-                                        expand = TRUE)
-      means_all <- colMeans(elig_cohort_num)
-      sd_all <- apply(elig_cohort_num, 2, sd)
+      # get P(S = 1 | X) for everyone
+      pred_S <- stats::predict(fit_S, type = "response")
       
-      # encode factors
-      baseline_num <- encode_factors(dt = data,
-                                     catvar = c(catvar, "trt"),
-                                     contvar = contvar)
+      # use weights only to those with the decision (S == 1)
+      PS_sel <- pred_S[elig_cohort$S == 1]
       
-      # The covariates we want to balance and the tolerances (0.05)
-      bal_cov = names(sd_all)
-      bal_tol = 0.05 * sd_all
-      bal_alg = FALSE
-      bal_std = "manual" 
-      bal = list(bal_cov = bal_cov, 
-                 bal_tol = bal_tol, 
-                 bal_alg = bal_alg, 
-                 bal_std = bal_std)
-      
-      # Constraining the weights to sum to one and be non-negative
-      wei_sum = TRUE
-      wei_pos = TRUE
-      wei = list(wei_sum = wei_sum, wei_pos = wei_pos)
-      
-      # Target covariate profile
-      par_est = "aux"
-      par_tar = means_all
-      par = list(par_est = par_est, par_tar = par_tar)
-      
-      safe_sbw <- function(...) {
-        tryCatch(
-          sbw::sbw(...),
-          error = function(e) NULL
-        )
-      }
-      
-      baseline_treated_sbw <- safe_sbw(
-        dat = baseline_num[trt == 1, ],
-        bal = bal,
-        par = par,
-        wei = wei,
-        mes = FALSE
-      )
-      
-      baseline_untreated_sbw <- safe_sbw(
-        dat = baseline_num[trt == 0, ],
-        bal = bal,
-        par = par,
-        wei = wei,
-        mes = FALSE
-      )
-      
-      # If either optimization failed → abort this bootstrap draw
-      if (is.null(baseline_treated_sbw) || is.null(baseline_untreated_sbw)) {
-        return(NULL)
-      }
-      
-      # # Finding the weights
-      # baseline_treated_sbw = sbw::sbw(
-      #   dat = baseline_num[trt==1, ],
-      #   bal = bal,
-      #   par = par,
-      #   wei = wei,
-      #   mes = FALSE
-      # )
-      # baseline_untreated_sbw = sbw::sbw(
-      #   dat = baseline_num[trt==0, ],
-      #   bal = bal,
-      #   par = par,
-      #   wei = wei,
-      #   mes = FALSE
-      # )
-      
-      IPSW_weights <- rep(NA, nrow(data))
-      IPSW_weights[data$trt==0] <- baseline_untreated_sbw$dat_weights$sbw_weights
-      IPSW_weights[data$trt==1] <- baseline_treated_sbw$dat_weights$sbw_weights
+      # create Dahabreh's stabilized generalizability weights 
+      IPSW_weights <- 1 / PS_sel
     }
     
     if (w_meth == "IPTW"){
