@@ -9,8 +9,8 @@ knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
 set.seed(1)
 
 # set directory
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Results/"
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
+results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
 # load libraries
 library(patchwork) # combine figures
@@ -24,11 +24,11 @@ source("Code/utils/data_manipulation.R")
 ################################################################################
 ### Load data ##################################################################
 ################################################################################
-load("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/cohort_with_weights.Rdata")
-load("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/merged_ckd.Rdata")
+load("Data/cohort_with_weights.Rdata")
+load("Data/merged_ckd.Rdata")
 
 ################################################################################
-### Time until dialysis ########################################################
+### Histogram for time until dialysis ##########################################
 ################################################################################
 id_name <- "LOPNR"
 dia_dt <- merged_ckd[!is.na(krt_startdate) &
@@ -42,10 +42,17 @@ time_to_dia_dt <- merge(baseline,
                         dia_dt, 
                         by = id_name,
                         all.x = TRUE)
+
+# compute time to dialysis
 time_to_dia_dt[, `:=`(
-  time_until_dialysis = krt_startdate - visit_date,
-  time_until_HD = fifelse(krt_modality == "HD", krt_startdate - visit_date, NA),
-  time_until_PD = fifelse(krt_modality == "PD", krt_startdate - visit_date, NA)
+  time_until_dialysis = lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
+  time_until_dialysis_days = lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "days"),
+  time_until_HD = fifelse(krt_modality == "HD",
+                              lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
+                              NA),
+  time_until_PD = fifelse(krt_modality == "PD",
+                              lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
+                              NA)
 )]
 
 # create time and event variable for dialysis
@@ -60,7 +67,7 @@ dialysis_long <- dialysis_df[, .(LOPNR, krt_modality,
     values_to = "time"
   ) |>
   dplyr::mutate(
-    time_years = time / 365.25,
+    time_years = time,
     type = dplyr::recode(type,
                          time_until_dialysis = "All Dialysis",
                          time_until_HD       = "Hemodialysis",
@@ -68,7 +75,9 @@ dialysis_long <- dialysis_df[, .(LOPNR, krt_modality,
   ) |>
   dplyr::filter(is.finite((time_years))) # remove censored individuals (TODO: write)
 
-time_hist <- ggplot2::ggplot(dialysis_long, ggplot2::aes(x = time_years, fill = type)) +
+# histogram
+time_hist <- ggplot2::ggplot(dialysis_long, 
+                             ggplot2::aes(x = time_years, fill = type)) +
   ggplot2::geom_histogram(alpha = 0.6, 
                  binwidth = 1/12, 
                  boundary = 0,
@@ -78,24 +87,61 @@ time_hist <- ggplot2::ggplot(dialysis_long, ggplot2::aes(x = time_years, fill = 
   ggplot2::scale_x_continuous(
     breaks = seq(0, max(dialysis_long$time_years, na.rm = TRUE), by = 1)
   ) +
-  ggplot2::scale_fill_brewer(palette = "Set2") +
-  ggplot2::theme_minimal(base_size = 14) +
+  ggplot2::scale_fill_brewer(palette = "Set1") +
+  ggplot2::theme_minimal(base_size = 18) +
   ggplot2::theme(
     legend.position = "none",
     panel.grid = ggplot2::element_blank(),
+    plot.tag = ggplot2::element_text(face = "bold"),
+    plot.title = ggplot2::element_text(hjust = 0.5)
   ) +
   ggplot2::labs(
-    x = "Time Until Dialysis (years)",
+    x = "Years",
     y = "Count",
-    title = ""
+    title = "Time until dialysis"
+  ) + 
+  ggplot2::labs(tag = "A") 
+time_hist_zoomed <- time_hist +
+  ggplot2::scale_x_continuous(limit = c(0, 2),
+                              breaks = seq(0, 2, 0.5),
+                              labels = c(0, 6, 12, 18, 24)) + 
+  ggplot2::labs(tag = "B",
+                title = "Time until dialysis, zoomed in on first 2 years",
+                x = "Months") +
+  ggplot2::theme(
+    plot.tag = ggplot2::element_text(face = "bold"),
+    plot.title = ggplot2::element_text(hjust = 0.5)
   )
 ggplot2::ggsave(
-  plot = time_hist,
-  filename = paste0(results_path, "Supplemental/Figure_S2.png"),
+  plot = time_hist / time_hist_zoomed,
+  filename = paste0(results_path, "Supplemental/Figure_S4.png"),
   width = 10,
-  height = 4,
+  height = 8,
   dpi = 300
 )
+
+cat(" Number excluded:",
+    dialysis_df[is.na(time_until_dialysis) | time_until_dialysis > 2, .N], "\n",
+    "Number administrative censoring:",
+    dialysis_df[is.na(time_until_dialysis), .N], "\n",
+    "Number competing event:",
+    dialysis_df[time_until_dialysis > 2, .N], "\n",
+    "Number of patients that chose dialysis starting dialysis within two years:",
+    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis <= 2, .N], "\n",
+    "Number of patients that chose HD starting dialysis within two years:",
+    dialysis_df[!is.na(time_until_HD) & time_until_HD <= 2, .N], "\n",
+    "Number of patients that chose PD starting dialysis within two years:",
+    dialysis_df[!is.na(time_until_PD) & time_until_PD <= 2, .N], "\n",
+    "Number of patients that chose dialysis starting dialysis within 3 months:",
+    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis <= 3/12, .N], "\n",
+    "Number of patients that chose dialysis starting dialysis between 3-6 months:",
+    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 3/12 & time_until_dialysis <= 0.5, .N], "\n",
+    "Number of patients that chose dialysis starting dialysis between 6-12 months:",
+    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 0.5 & time_until_dialysis <= 1, .N], "\n",
+    "Number of patients that chose dialysis starting dialysis between 12-24 months:",
+    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 1 & time_until_dialysis <= 2, .N], "\n",
+    "Number of patients that chose dialysis but died before starting dialysis within two years:",
+    dialysis_df[time2event_death_2y < time_until_dialysis_days, .N], "\n")
 
 ################################################################################
 ### Baseline characteristics for full eligibility cohort and cohort after weighting
@@ -196,46 +242,35 @@ row_labels <- c(
 )
 
 # create descriptive statistics table for full eligible cohort
-openxlsx::write.xlsx(
-  create_baseline_table(
-    data = elig_cohort,
-    id_name = "LOPNR",
-    weights = NULL,
-    vars = listvar,
-    categoricalVars = catvar,
-    IQRVars = non_normal_vars,
-    treatmentColumn = "S",
-    # Column indicating if trt dec registered
-    treatmentLabel = "Treatment registered",
-    controlLabel = "Treatment not registered",
-    tableCaption = paste("Baseline characteristics of all eligible patients")
-  )$raw_table[, -c(3, 4)],
-  rowNames = TRUE,
-  file = paste0(
-    results_path,
-    "Supplemental/Descriptives_full_eligibility_cohort.xlsx"
-  )
-)
-openxlsx::write.xlsx(
-  create_baseline_table(
-    data = elig_cohort,
-    id_name = "LOPNR",
-    weights = elig_cohort$sw_IPSW,
-    vars = listvar,
-    categoricalVars = catvar,
-    IQRVars = non_normal_vars,
-    treatmentColumn = "S",
-    # Column indicating if trt dec registered
-    treatmentLabel = "Treatment registered",
-    controlLabel = "Treatment not registered",
-    tableCaption = paste("Baseline characteristics of all eligible patients")
-  )$raw_table[, -c(3, 4)],
-  rowNames = TRUE,
-  file = paste0(
-    results_path,
-    "Supplemental/Descriptives_full_eligibility_cohort_IPSW.xlsx"
-  )
-)
+table_full_elig <- create_baseline_table(
+  data = elig_cohort,
+  id_name = "LOPNR",
+  weights = NULL,
+  vars = listvar,
+  categoricalVars = catvar,
+  IQRVars = non_normal_vars,
+  treatmentColumn = "S",
+  treatmentLabel = "Treatment registered",
+  controlLabel = "Treatment not registered",
+  tableCaption = paste("Baseline characteristics of all eligible patients"),
+  tableRowLabels = row_labels
+)$raw_table
+
+elig_cohort$sw_IPSW <- 1
+elig_cohort[elig_cohort$S==1, "sw_IPSW"] <- baseline$sw_IPSW
+table_full_elig_IPSW <- create_baseline_table(
+  data = elig_cohort,
+  id_name = "LOPNR",
+  weights = elig_cohort$sw_IPSW,
+  vars = listvar,
+  categoricalVars = catvar,
+  IQRVars = non_normal_vars,
+  treatmentColumn = "S",
+  treatmentLabel = "Treatment registered",
+  controlLabel = "Treatment not registered",
+  tableCaption = paste("Baseline characteristics of all eligible patients, IPSW"),
+  tableRowLabels = row_labels
+)$raw_table
 
 # Create baseline table without weighting and with the four methods of weighting
 for (w_meth in w_meths) {
@@ -320,8 +355,71 @@ for (w_meth in w_meths) {
 }
 
 ################################################################################
-### Create love plots of SMDs before and after weighting #######################
+### Create love plots of SMDs before and after IPTW ############################
 ################################################################################
+# set colors
+manual_colors <- RColorBrewer::brewer.pal(n = 4, name = "Set1")
+
+# set names
+varnames <- c(
+  "Age",
+  "Age category",
+  "Female",
+  "Davies score",
+  "Davies score category",
+  "Region",
+  "Clinic level",
+  "Calendar year category",
+  "eGFR",
+  "eGFR category",
+  "SBP",
+  "SBP category",
+  "DBP",
+  "DBP category",
+  "Total calcium",
+  "Phosphorus",
+  "Albumin",
+  "Haemoglobin",
+  "Primary kidney disease",
+  "Malignancy",
+  "Ischemic heart disease",
+  "Peripheral vascular disease",
+  "Heart failure",
+  "Diabetes mellitus",
+  "Systemic collagen vascular disease",
+  "COPD",
+  "Cirrhosis",
+  "Psychiatric illness",
+  "Acute coronary syndrome",
+  "Hypertension",
+  "Valvular heart disease",
+  "Other cerebrovascular disease",
+  "Atrial fibrillation",
+  "Other arrhythmias",
+  "Other lung disease",
+  "Venous thromboembolism",
+  "Liver disease",
+  "Fracture",
+  "Acute kidney injury",
+  "Beta blockers",
+  "Calcium channel blockers",
+  "Diuretic",
+  "Renin-angiotensin system inhibitors",
+  "Lipid lowering agents",
+  "Phosphate binder",
+  "Erythropoietin stimulating agents",
+  "Vitamin D",
+  "Digoxin",
+  "Vasodilator",
+  "Antiplatelet agents",
+  "Anticoagulants",
+  "Iron",
+  "Hospitalizations in previous year",
+  "Cardiovascular hospitalizations in previous year",
+  "Education"
+)
+
+# combine in dt
 SMDs_dt <- cbind(SMD_, SMD_IPTW)
 rownames(SMDs_dt) <- varnames
 SMDs_dt <- SMDs_dt[order(SMDs_dt[, "SMD_IPTW"], decreasing = TRUE), ]
@@ -330,12 +428,107 @@ ggplot2::ggsave(
     SMDs_dt = SMDs_dt,
     SMD_names = c("SMD_", "SMD_IPTW"),
     plot_title = "Before and after IPTW",
+    plotColors = manual_colors,
     xmax = 1
   ),
-  filename = paste0(results_path, "Supplemental/Figure_S5.png"),
+  filename = paste0(results_path, "Supplemental/Figure_S3.png"),
   width = 15,
   height = 15,
   dpi = 300
+)
+
+################################################################################
+# calculate SMD for those with a treatment decision versus all eligible patients
+################################################################################
+# encode factors
+elig_cohort_num <- encode_factors(dt = elig_cohort,
+                                  catvar = catvar,
+                                  contvar = contvar,
+                                  expand = FALSE)
+means_all <- colMeans(elig_cohort_num[, ..listvar])
+sd_all <- apply(elig_cohort_num[, ..listvar], 2, sd)
+
+# encode factors
+baseline_num <- encode_factors(dt = baseline,
+                               catvar = c(catvar, "trt"),
+                               contvar = contvar,
+                               expand = FALSE)
+means <- colMeans(baseline_num[, ..listvar])
+means_treated <- colMeans(baseline_num[trt==1, ..listvar])
+means_untreated <- colMeans(baseline_num[trt==0, ..listvar])
+wmeans <- apply(baseline_num[, ..listvar], 2, 
+                weighted.mean, 
+                w = as.numeric(baseline[, "sw_IPSW"][[1]]))
+wmeans_treated <- apply(baseline_num[trt==1, ..listvar], 2, 
+                        weighted.mean, 
+                        w = as.numeric(baseline[trt==1, "sw_IPSW"][[1]]))
+wmeans_untreated <- apply(baseline_num[trt==0, ..listvar], 2, 
+                          weighted.mean, 
+                          w = as.numeric(baseline[trt==0, "sw_IPSW"][[1]]))
+
+# balance before weighting
+SMD_elig <- abs(means - means_all) / sd_all
+SMD_elig_treated <- abs(means_treated - means_all) / sd_all
+SMD_elig_untreated <- abs(means_untreated - means_all) / sd_all
+
+# balance after weighting
+SMD_elig_wt <- abs(wmeans - means_all) / sd_all
+SMD_elig_treated_wt <- abs(wmeans_treated - means_all) / sd_all
+SMD_elig_untreated_wt <- abs(wmeans_untreated - means_all) / sd_all
+
+# save table
+SMD_eligs_dt <- data.frame(SMD_elig = SMD_elig,
+                           untreated_unweighted = SMD_elig_untreated,
+                           treated_unweighted = SMD_elig_treated,
+                           SMD_elig_IPSW = SMD_elig_wt,
+                           untreated_weighted = SMD_elig_untreated_wt,
+                           treated_weighted = SMD_elig_treated_wt)
+row_names_without_levels <- row_labels[-c(1, 4:7, 11:13, 15:19, 21:23, 25:27, 
+                                          30:32, 35:38, 41:44, 50:52, 86:88)]
+rownames(SMD_eligs_dt) <- varnames
+# openxlsx::write.xlsx(
+#   SMD_eligs_dt,
+#   rowNames = TRUE,
+#   file = paste0(results_path, "Supplemental/SMD_elig.xlsx")
+# )
+
+# save plot
+SMD_eligs_dt <- SMD_eligs_dt[order(SMD_eligs_dt$SMD_elig_IPSW, decreasing = TRUE), ]
+ggplot2::ggsave(
+  plot = love_plot(
+    SMDs_dt = SMD_eligs_dt,
+    SMD_names = c("SMD_elig", "SMD_elig_IPSW"),
+    plot_title = "Before and after IPSW",
+    plotColors = manual_colors[1:2],
+    xlab_title = "Target absolute standardized mean difference",
+    xmax = 1
+  ),
+  filename = paste0(results_path, "Supplemental/Figure_S9_IPSW.png"),
+  width = 15,
+  height = 15,
+  dpi = 300
+)
+
+# descriptives full eligibility
+table_full_elig[, "SMD"] <- ""
+table_full_elig[rownames(table_full_elig) %in% row_names_without_levels, "SMD"] <- sprintf("%.3f", SMD_elig)
+openxlsx::write.xlsx(
+  table_full_elig,
+  rowNames = TRUE,
+  file = paste0(
+    results_path,
+    "Supplemental/Descriptives_full_eligibility_cohort.xlsx"
+  )
+)
+table_full_elig_IPSW[, "SMD"] <- ""
+table_full_elig_IPSW[rownames(table_full_elig_IPSW) %in% row_names_without_levels, "SMD"] <- sprintf("%.3f", SMD_elig_wt)
+openxlsx::write.xlsx(
+  table_full_elig_IPSW,
+  rowNames = TRUE,
+  file = paste0(
+    results_path,
+    "Supplemental/Descriptives_full_eligibility_cohort_IPSW.xlsx"
+  )
 )
 
 ################################################################################
@@ -367,9 +560,9 @@ baseline_TX[,
 #             c(id_name, "trt", "visit_date", "krt_startdate", "krt_modality", "time_until_TX"),
 #             with = FALSE]
 
-cat("Number of transplantations in 2 years after dialysis decision:",
-    nrow(unique(baseline_TX[baseline_TX$time_until_TX>0 & 
-                              baseline_TX$time_until_TX< 2 * 365.25, "LOPNR"])), "\n")
+cat(" Number of transplantations in two years after dialysis decision:",
+    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 & 
+                              baseline_TX$time_until_TX < 2*365, "LOPNR"])), "\n")
 
 ################################################################################
 ### Summarize number of decisions
@@ -460,3 +653,25 @@ print(ndec)
 openxlsx::write.xlsx(ndec,
                      rowNames = FALSE,
                      file = paste0(results_path, "Main/Number_of_decisions.xlsx"))
+
+# save cohort
+save(
+  id_name,
+  listvar,
+  listvar_main,
+  catvar,
+  contvar,
+  non_normal_vars,
+  treatment_label,
+  control_label,
+  baseline,
+  model_PS,
+  model_S, 
+  coef_PS_overall,
+  elig_cohort,
+  w_meths,
+  manual_colors,
+  file = file.path(
+    "Data/cohort_with_weights.Rdata"
+  )
+)

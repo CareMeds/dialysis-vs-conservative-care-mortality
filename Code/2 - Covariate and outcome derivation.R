@@ -7,7 +7,7 @@
 # rm(list = ls(all.names = TRUE))
 
 # load data
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 load("Data/new_cohort.Rdata")
 load("Data/merged_ckd.Rdata")
 load("Data/cleaned/snr_inpatient.Rdata")
@@ -73,6 +73,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   )
   
   # merge with cohort
+  # TODO: do I really need merge or can I only use retrieve_past_info
   cohort_other_comorb <- merge(cohort,
                                in_out_dict$diagnoses_dt,
                                by = c(id_name, "visit_date"),
@@ -178,7 +179,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       id_name = id_name,
       date_name = "visit_date",
       var_name = medication,
-      max_roll_days = Inf,
+      max_roll_days = 365.25 / 2,
       setNA = TRUE # set remaining NA to zero
     )
   }
@@ -345,6 +346,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   geo_dt[, region := county_to_region[county]]
 
   # create clinic levels
+  # local clinics
   clinic_lev1 <- c(
     "Avesta",
     "Bollnas",
@@ -376,6 +378,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Utrikes"         # emigration merged with local
   )
   
+  # regional clinics
   clinic_lev2 <- c(
     "Boras",
     "Danderyd",
@@ -402,6 +405,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Ej Njurmedicin"  # referred back to other discipline, merged with regional
   )
   
+  # academic clinics
   clinic_lev3 <- c(
     # "Gbg SU/Ostra dialysmott",
     "Gbg SU/Ostra",       # new
@@ -549,7 +553,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       # diagnosis code column
       code_col = "HDIA",
       # ICD codes for stroke
-      codes = "^I60|^I61|^I62|^I63|^I64"  
+      codes = "^I60|^I61|^I62|^I63|^I64"
     ),
     
     # KRT: uses krt_startdate
@@ -709,9 +713,10 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # save cohort
   save(cohort_final, file = file.path(
     paste0(
-      "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/analysis_data_",
+      "Data/analysis_data_",
       cohort_name,
       "_new.Rdata"
     )
   ))
 }
+

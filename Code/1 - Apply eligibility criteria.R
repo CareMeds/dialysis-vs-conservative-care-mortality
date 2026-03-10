@@ -7,7 +7,7 @@
 rm(list = ls(all.names = TRUE))
 
 # load data
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 load("Data/merged_ckd.Rdata")
 load("Data/cleaned/snr_inpatient.Rdata")
 load("Data/cleaned/snr_outpatient.Rdata")
@@ -165,8 +165,7 @@ Davies_comorbidities <- c("cancer",
                           "scvd",
                           "copd",
                           "cirr",
-                          "psycho",
-                          "hiv")
+                          "psycho")
 if (new_diag) {
   Davies_65_80 <- diagnoses.dictionary(
     inpatient_dt = UT_R_PAR_SV_123160_2023,
@@ -175,7 +174,7 @@ if (new_diag) {
     comorbidities = Davies_comorbidities,
     max_date_dict = max_date_dict
   )$diagnoses_dt
-  save(Davies_65_80, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/Davies_65_80.Rdata")
+  save(Davies_65_80, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Data/Davies_65_80.Rdata")
 }
 
 # 1.4 Add comorbidities to dt
@@ -202,8 +201,7 @@ eligible_visits <- new_visit_dates[age_65_80,
                                           visit_date >= elig_from_1,
                                           visit_date <= elig_until_1),
                                    nomatch = 0, .(
-  LOPNR,
-  # from new_visit_dates
+  LOPNR,  # from new_visit_dates
   visit_date = x.visit_date,
   decision_date1,
   decision_modality1,
@@ -219,8 +217,7 @@ eligible_visits <- new_visit_dates[age_65_80,
   scvd,
   copd,
   cirr,
-  psycho,
-  hiv
+  psycho
 )]      
 
 # ensure to not add rows that are already in age_65_80
@@ -277,7 +274,8 @@ for (comorbidity in Davies_comorbidities) {
 }
 
 # Calculate Davies score
-age_65_80_comorbidities[, Davies_score := rowSums(.SD, na.rm = TRUE), .SDcols = Davies_comorbidities]
+age_65_80_comorbidities[, Davies_score := rowSums(.SD, na.rm = TRUE),
+                        .SDcols = Davies_comorbidities]
 
 # Include those visits for which patients are 65 <= age <80 and Davies score >= 2
 elig_65_80_Davies <- age_65_80_comorbidities[age >= 65 & Davies_score >= 2]
@@ -320,7 +318,12 @@ setkey(age_crit_dt, LOPNR, visit_date)
 ### Eligibility criterion 3: all lab measurements (max 1 year look-back)
 ################################################################################
 # create laboratory measurements dictionary
-lab_vars <- c("sbp", "dbp", "calcium_total", "phosphate", "albumin", "hb")
+lab_vars <- c("albumin",
+              "calcium_total",
+              "dbp",
+              "hb",
+              "phosphate", 
+              "sbp")
 lab_dictionary <- unique(merged_ckd[, .SD, 
                                     .SDcols = c("LOPNR", 
                                                 "visit_date", 
@@ -391,7 +394,7 @@ if (new_diag) {
     lopnr_obtain_diag = unique(no_trans_dia_dt$LOPNR),
     comorbidities = c("hiv", "dementia")
   )$diagnoses_dt
-  save(hiv_dementia, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/hiv_dementia.Rdata")
+  save(hiv_dementia, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Data/hiv_dementia.Rdata")
 }
 
 # 2. create dt that finds first hiv or dementia event
@@ -515,20 +518,12 @@ elig_dt_expanded <- no_palliative_dt[, .(date = seq(visit_date,
 elig_dt_expanded[, c("visit_date", "elig_until_6") := NULL]
 setnames(elig_dt_expanded, "date", "visit_date")
 
-# randomly select a date among eligible dates for each patient
-elig_cohort <- elig_dt_expanded[, .SD[sample(.N, 1)], by = "LOPNR"]
-
-# define age
-elig_cohort <- calculate_age(dt = elig_cohort,
-                             birthdate_col = "birthdate", 
-                             visitdate_col = "visit_date")
-
 ################################################################################
 ### Analysis cohort: those who have registered treatment decision
 ################################################################################
 # only keep eligible date at which the initial decision is made
 cohort <- elig_dt_expanded[visit_date == decision_date1 &
-                             !is.na(decision_modality1)] 
+                             !is.na(decision_modality1)]
 nrow(cohort)
 
 # remove transplantations
@@ -541,43 +536,66 @@ cohort <- calculate_age(dt = cohort,
                         visitdate_col = "visit_date")
 
 ################################################################################
+### Eligibility cohort
+################################################################################
+# randomly select a date among eligible dates for patients without a decision
+elig_cohort_no_dec <- elig_dt_expanded[!(LOPNR %in% cohort$LOPNR), 
+                                       .SD[sample(.N, 1)],
+                                       by = "LOPNR"]
+
+# define age
+elig_cohort_no_dec <- calculate_age(dt = elig_cohort_no_dec,
+                                    birthdate_col = "birthdate", 
+                                    visitdate_col = "visit_date")
+
+# define trt
+elig_cohort_no_dec[, trt := NA]
+
+# combine cohorts
+elig_cohort <- rbind(cohort,
+                     elig_cohort_no_dec)
+
+# Define S = 1 if in analysis data set and 0 otherwise
+elig_cohort <- elig_cohort[, S:= ifelse(is.na(trt), 0, 1)]
+
+################################################################################
 ### Flow chart
 ################################################################################
 cat(
   " Initial number of patients                     :",
-  length(unique(merged_ckd$LOPNR)),                                             # 50048 # new: 58017   
+  merged_ckd[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(merged_ckd$LOPNR)) - length(unique(low_egfr$LOPNR)),            # 25882 # new: 30108    
+  merged_ckd[, uniqueN(LOPNR)] - low_egfr[, uniqueN(LOPNR)],
   "\n Patients with eGFR < 20                        :",
-  length(unique(low_egfr$LOPNR)),                                               # 24166 # new: 27909    
+  low_egfr[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(low_egfr$LOPNR)) - length(unique(age_crit_dt$LOPNR)),           # 9808 # new: 11660    
+  low_egfr[, uniqueN(LOPNR)] - age_crit_dt[, uniqueN(LOPNR)],
   "\n Patients with age>=65 & Davies>=2 OR age >= 80 :",
-  length(unique(age_crit_dt$LOPNR)),                                            # 14358 # new: 16249    
+  age_crit_dt[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(age_crit_dt$LOPNR)) - length(unique(lab_complete_dt$LOPNR)),    # 2310 # new: 1883    
+  age_crit_dt[, uniqueN(LOPNR)] - lab_complete_dt[, uniqueN(LOPNR)],
   "\n Patients with all lab measurements             :",
-  length(unique(lab_complete_dt$LOPNR)),                                        # 12048 # new: 14366     
+  lab_complete_dt[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(lab_complete_dt$LOPNR)) - length(unique(no_trans_dia_dt$LOPNR)),# 1550 # new: 2299     
+  lab_complete_dt[, uniqueN(LOPNR)] - no_trans_dia_dt[, uniqueN(LOPNR)],
   "\n Patients without transplantation or dialysis   :",
-  length(unique(no_trans_dia_dt$LOPNR)),                                        # 10498 # new: 12067     
+  no_trans_dia_dt[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(no_trans_dia_dt$LOPNR)) - length(unique(no_hiv_dementia_dt$LOPNR)), # 258 # new: 227     
-  "\n Patients with visits without or before hiv or dementia:",
-  length(unique(no_hiv_dementia_dt$LOPNR)),                                     # 10240 # new: 11840     
+  no_trans_dia_dt[, uniqueN(LOPNR)] - no_hiv_dementia_dt[, uniqueN(LOPNR)],
+  "\n Patients with history of hiv or dementia       :",
+  no_hiv_dementia_dt[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(no_hiv_dementia_dt$LOPNR)) - length(unique(no_palliative_dt$LOPNR)), # 35     
+  no_hiv_dementia_dt[, uniqueN(LOPNR)] - no_palliative_dt[, uniqueN(LOPNR)],
   "\n Patients without palliative care               :",
-  length(unique(no_palliative_dt$LOPNR)),                                       # 11805
+  no_palliative_dt[, uniqueN(LOPNR)],
   "\n Excluded                                       :",
-  length(unique(no_palliative_dt$LOPNR)) - length(unique(cohort$LOPNR)),        # 7287 # new: 8427    
+  no_palliative_dt[, uniqueN(LOPNR)] - cohort[, uniqueN(LOPNR)],
   "\n Patients with treatment decision dialysis or CC:",
-  length(unique(cohort$LOPNR)),                                                 # 2953 # new: 3378    
+  cohort[, .N],
   "\n Patients who chose conservative care           :", 
-  sum(cohort$trt == 0),                                                         # 885 # new: 1057
+  cohort[trt==0, .N],
   "\n Patients who chose dialysis                    :", 
-  sum(cohort$trt == 1), "\n")                                                   # 2068 # new: 2321 
+  cohort[trt==1, .N], "\n")
 
 # save file
 save(
@@ -598,9 +616,10 @@ save(
   hiv_dementia_dt,
   no_hiv_dementia_dt,
   elig_dt_expanded,
-  file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/new_cohort.Rdata"
+  file = "Data/new_cohort.Rdata"
 )
 
 # check
 sort(colSums(is.na(elig_cohort)))
 sort(colSums(is.na(cohort)))
+

@@ -5,12 +5,12 @@
 
 # remove history
 rm(list = ls(all.names = TRUE))
-knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
+knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 set.seed(1)
 
 # set directory
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Results/"
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
+results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
 # load libraries
 library(data.table)
@@ -21,14 +21,14 @@ source("Code/utils/weighting.R")
 source("Code/utils/plots.R")
 source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
-source("Code/utils/outcomes_absolute_risks.R")
+source("Code/utils/compute_absolute_relative_risks.R")
 
 ################################################################################
 ### Load data ##################################################################
 ################################################################################
-load("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/analysis_data_elig_cohort_new.Rdata")
+load("Data/analysis_data_elig_cohort_new.Rdata")
 elig_cohort <- cohort_final
-load("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/analysis_data_cohort_new.Rdata")
+load("Data/analysis_data_cohort_new.Rdata")
 baseline <- cohort_final
 
 # Set variables to include in the baseline table
@@ -124,64 +124,6 @@ listvar <- c(
   "edu"
 )
 
-varnames <- c(
-  "Age",
-  "Age category",
-  "Female",
-  "Davies score",
-  "Davies score category",
-  "Region",
-  "Clinic level",
-  "Calendar year category",
-  "eGFR",
-  "eGFR category",
-  "SBP",
-  "SBP category",
-  "DBP",
-  "DBP category",
-  "Total calcium",
-  "Phosphorus",
-  "Albumin",
-  "Haemoglobin",
-  "Primary kidney disease",
-  "Malignancy",
-  "Ischemic heart disease",
-  "Peripheral vascular disease",
-  "Heart failure",
-  "Diabetes mellitus",
-  "Systemic collagen vascular disease",
-  "COPD",
-  "Cirrhosis",
-  "Psychiatric illness",
-  "Acute coronary syndrome",
-  "Hypertension",
-  "Valvular heart disease",
-  "Other cerebrovascular disease",
-  "Atrial fibrillation",
-  "Other arrhythmias",
-  "Other lung disease",
-  "Venous thromboembolism",
-  "Liver disease",
-  "Fracture",
-  "Acute kidney injury",
-  "Beta blockers",
-  "Calcium channel blockers",
-  "Diuretic",
-  "Renin-angiotensin system inhibitors",
-  "Lipid lowering agents",
-  "Phosphate binder",
-  "Erythropoietin stimulating agents",
-  "Vitamin D",
-  "Digoxin",
-  "Vasodilator",
-  "Antiplatelet agents",
-  "Anticoagulants",
-  "Iron",
-  "Hospitalizations in previous year",
-  "Cardiovascular hospitalizations in previous year",
-  "Education"
-)
-
 # define which variables are continuous and which are categorical
 contvar <- c(
   "age",
@@ -207,8 +149,10 @@ non_normal_vars <- c("age",
                      "n_hospital",
                      "n_cvd_hospital") # Nonnormally distributed
 
-# Define the RHS of the formula once
-rhs_formula <- ~ rms::pol(age, 2) + age_cat +
+################################################################################
+### Propensity score model #####################################################
+################################################################################
+model_PS <- trt ~ rms::pol(age, 2) + age_cat +
   female +
   rms::pol(egfr2021, 2) + egfr_cat +
   Davies_score_cat +
@@ -257,14 +201,8 @@ rhs_formula <- ~ rms::pol(age, 2) + age_cat +
   edu +
   iron_cat +
   clinic_level +
-  region 
-
-################################################################################
-### Propensity score model #####################################################
-################################################################################
-# Define the propensity score model
-model_PS <- update(rhs_formula, trt ~ . +
-                     vasodilator:rms::pol(age, 2))  # TODO: write about it
+  region +
+  vasodilator:rms::pol(age, 2)
 
 # Create IPTW weights on full cohort
 out_weights <- create_weights(
@@ -291,7 +229,7 @@ table_one <- create_baseline_table(
   controlLabel = control_label,
   tableCaption = ""
 )
-print(table_one$smd_table[which(table_one$smd_table>0.1)])
+cat("Number of SMDs > 0.1:", table_one$smd_table[which(table_one$smd_table>0.1)], "\n")
 
 # save coefficients of PS model
 coef_PS_overall <- out_weights$coef_ps
@@ -385,7 +323,6 @@ rownames(PS_df) <- c(
   "Age^2 * vasodoliator"
 )
 colnames(PS_df) <- c("Coefficients (95% CI)", "HR (95% CI)")
-# TODO: exploding vasodilator coefficient
 openxlsx::write.xlsx(
   PS_df,
   rowNames = TRUE,
@@ -406,13 +343,6 @@ pROC::auc(pROC::roc(
 ))
 
 ################################################################################
-### Generalizability model #####################################################
-################################################################################
-# Define S = 1 if in analysis data set and 0 otherwise
-elig_cohort$S <- ifelse(elig_cohort[, id_name, with = FALSE][[1]] %in% 
-                          baseline[, id_name, with = FALSE][[1]], 1L, 0L)
-
-################################################################################
 ### Compute weights using several techniques ###################################
 ################################################################################
 # compute for all weighting methods
@@ -423,6 +353,7 @@ elig_cohort$S <- ifelse(elig_cohort[, id_name, with = FALSE][[1]] %in%
 # 5) Overlap weighting
 # 6) IPTW and probability of belonging to eligibility cohort (generalizability)
 w_meths <- c("", "IPTW", "overlap", "IPSW", "IPSW_IPTW", "SMR_ATT", "SMR_ATU")
+model_S <- update(model_PS, S ~ . -rms::pol(age, 2):vasodilator)
 for (w_meth in w_meths) {
   # create weights
   if (w_meth != "") {
@@ -430,6 +361,7 @@ for (w_meth in w_meths) {
       data = baseline,
       elig_cohort = elig_cohort,
       model_PS = model_PS,
+      model_S = model_S,
       w_meth = w_meth,
       catvar = catvar,
       contvar = contvar,
@@ -465,78 +397,9 @@ summ_weights <- data.table::rbindlist(lapply(w_meths[-1], function(w_meth) {
 # Write to Excel (one worksheet)
 openxlsx::write.xlsx(
   x = summ_weights,
-  file = file.path(results_path, "Supplemental/Table_S4.xlsx"),
+  file = file.path(results_path, "Supplemental/Table_S5_weights.xlsx"),
   rowNames = FALSE,
   overwrite = TRUE
-)
-
-################################################################################
-# calculate SMD for those with a treatment decision versus all eligible patients
-################################################################################
-# encode factors
-elig_cohort_num <- encode_factors(dt = elig_cohort,
-                                  catvar = catvar,
-                                  contvar = contvar,
-                                  expand = FALSE)
-means_all <- colMeans(elig_cohort_num[, ..listvar])
-sd_all <- apply(elig_cohort_num[, ..listvar], 2, sd)
-
-# encode factors
-baseline_num <- encode_factors(dt = baseline,
-                               catvar = c(catvar, "trt"),
-                               contvar = contvar,
-                               expand = FALSE)
-means <- colMeans(baseline_num[, ..listvar])
-means_treated <- colMeans(baseline_num[trt==1, ..listvar])
-means_untreated <- colMeans(baseline_num[trt==0, ..listvar])
-wmeans <- apply(baseline_num[, ..listvar], 2, 
-                weighted.mean, 
-                w = as.numeric(baseline[, "sw_IPSW"][[1]]))
-wmeans_treated <- apply(baseline_num[trt==1, ..listvar], 2, 
-                        weighted.mean, 
-                        w = as.numeric(baseline[trt==1, "sw_IPSW"][[1]]))
-wmeans_untreated <- apply(baseline_num[trt==0, ..listvar], 2, 
-                          weighted.mean, 
-                          w = as.numeric(baseline[trt==0, "sw_IPSW"][[1]]))
-
-# balance before weighting
-TASMD <- abs(means - means_all) / sd_all
-TASMD_treated <- abs(means_treated - means_all) / sd_all
-TASMD_untreated <- abs(means_untreated - means_all) / sd_all
-
-# balance after weighting
-TASMD_wt <- abs(wmeans - means_all) / sd_all
-TASMD_treated_wt <- abs(wmeans_treated - means_all) / sd_all
-TASMD_untreated_wt <- abs(wmeans_untreated - means_all) / sd_all
-
-# save table
-TASMDs_dt <- data.frame(TASMD = TASMD, 
-                       untreated_unweighted = TASMD_untreated,
-                       treated_unweighted = TASMD_treated,
-                       TASMD_IPSW = TASMD_wt, 
-                       untreated_weighted = TASMD_untreated_wt, 
-                       treated_weighted = TASMD_treated_wt)
-rownames(TASMDs_dt) <- varnames
-openxlsx::write.xlsx(
-  TASMDs_dt,
-  rowNames = TRUE,
-  file = paste0(results_path, "Supplemental/TASMD.xlsx")
-)
-
-# save plot
-TASMDs_dt <- TASMDs_dt[order(TASMDs_dt$TASMD_IPSW, decreasing = TRUE), ]
-ggplot2::ggsave(
-  plot = love_plot(
-    SMDs_dt = TASMDs_dt,
-    SMD_names = c("TASMD", "TASMD_IPSW"),
-    plot_title = "Before and after IPSW",
-    xlab_title = "Target absolute standardized mean difference",
-    xmax = 1
-  ),
-  filename = paste0(results_path, "Supplemental/Figure_S6.png"),
-  width = 15,
-  height = 15,
-  dpi = 300
 )
 
 # save cohort
@@ -544,7 +407,6 @@ save(
   id_name,
   listvar,
   listvar_main,
-  varnames,
   catvar,
   contvar,
   non_normal_vars,
@@ -552,10 +414,11 @@ save(
   control_label,
   baseline,
   model_PS,
+  model_S, 
   coef_PS_overall,
   elig_cohort,
   w_meths,
   file = file.path(
-    "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/cohort_with_weights.Rdata"
+    "Data/cohort_with_weights.Rdata"
   )
 )

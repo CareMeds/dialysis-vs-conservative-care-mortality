@@ -7,7 +7,7 @@
 rm(list = ls(all.names = TRUE))
 
 # load data
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 load("Data/cleaned/snr_ckd.Rdata")        # CKD patients
 load("Data/cleaned/snr_rrt.Rdata")        # Renal Replacement Therapy (transplantation)
 load("Data/cleaned/snr_hdpd.Rdata")       # lab data from hemodialysis or peritoneal dialysis patients
@@ -121,11 +121,17 @@ snr_rrt[, `:=`(
 )]
 
 # some IDs have multiple rows
-snr_rrt[, .N, by="LOPNR"][N>1]
-snr_rrt[LOPNR==18316963,]
+snr_rrt[, uniqueN(LOPNR)]      # 43276
+snr_rrt[, .N, by="LOPNR"][N>1] # 21292
+snr_rrt[LOPNR==18316963,]      # example
 
 # only keep krt_start == 1 information, this does not delete IDs
 snr_rrt <- snr_rrt[krt_start == 1, ]
+snr_rrt[, uniqueN(LOPNR)]      # 43276
+snr_rrt[, .N, by="LOPNR"][N>1] # 1 
+# example has two krt start dates
+# but is removed later on because they are not in primary CKD data set
+snr_rrt[LOPNR==35333149,]
 
 # dialysis information, note to not use future information
 snr_hdpd <- unique(SOS_DIALYSISDATA2024[, c(
@@ -169,12 +175,17 @@ merged_ckd <- merge(
   all = TRUE,
   suffixes = c("", ".hdpd")
 )
+sum(is.na(merged_ckd$birthdate))
 
 # take the minimum of these merged variables
-colnames.merge <- c("clinic", "county", "prd_cat", "birthdate", "DODSDAT", "female")
+colnames.merge <- c("clinic", "county", 
+                    "birthdate", "DODSDAT", 
+                    "female", "prd_cat")
 for (colname in colnames.merge) {
-  merged_ckd[, colname := do.call(pmin, c(.SD, na.rm = TRUE)),
+  # print(colSums(is.na(merged_ckd[, .SD, .SDcols = patterns(paste0("^", colname))])))
+  merged_ckd[, (colname) := do.call(fcoalesce, .SD),
              .SDcols = patterns(paste0("^", colname))]
+  # print(colSums(is.na(merged_ckd[, .SD, .SDcols = patterns(paste0("^", colname))])))
 }
 
 # Remove intermediate columns
@@ -197,7 +208,7 @@ nrow(merged_ckd) # N = 576292
 
 # ensure visit_date is before date of death or has not died yet
 merged_ckd <- merged_ckd[visit_date < DODSDAT | is.na(DODSDAT)]
-nrow(merged_ckd) # N = 576250
+nrow(merged_ckd) # N = 576247
 
 ################################################################################
 ### Calculate age and eGFR at each visit
@@ -220,7 +231,7 @@ merged_ckd <- retrieve_past_info(
 merged_ckd[, egfr2021 := ckd_epi_2021_cr(screa, age, female)]
 
 # transform hemoglobin g/l into mmol/l
-merged_ckd[, hb := hb * 0.6206]
+merged_ckd[, hb := hb * 0.6206 / 10]
 
 # save file
-save(merged_ckd, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Data/merged_ckd.Rdata")
+save(merged_ckd, file = "Data/merged_ckd.Rdata")
