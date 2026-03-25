@@ -84,7 +84,7 @@ calc_event <- function(cohort_dt,
   # If the event occurred, event_dt = event_date; otherwise, event_dt = censor
   dt[, event_dt := fifelse(event == 1L, event_date, censor)]
   
-  # Time to event in days
+  # Time to event in days, automatically taking into account leap years
   dt[, time2event := as.numeric(event_dt - visit_date)]
   
   # -----------------------------

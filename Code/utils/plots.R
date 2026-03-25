@@ -21,9 +21,6 @@ create_ps_distribution_plot <- function(data,
     response = data$trt,
     quiet = TRUE
   ))
-  # AUC <- WeightedROC::WeightedAUC(WeightedROC::WeightedROC(guess=data$ps,
-  #                                                          label=data$trt,
-  #                                                          weight=weights))
   
   # create histogram for propensity scores
   # !! added to make sure to use weights from data
@@ -118,95 +115,9 @@ create_ps_distribution_plot <- function(data,
   ))
 }
 
-create_age_distribution_plot <- function(data,
-                                         # containing ps and trt
-                                         title,
-                                         treatmentLabel,
-                                         controlLabel,
-                                         titleSize = 26,
-                                         TextSize = 26,
-                                         palette = c("blue", "darkgreen"),
-                                         weights = NULL) {
-  # create histogram for age
-  hist <- ggplot2::ggplot(data, ggplot2::aes(
-    x = age,
-    fill = factor(trt),
-    weight = !!weights
-  )) + # !! added to make sure to use weights from data
-    ggplot2::geom_histogram(alpha = 0.6,
-                            position = "dodge",
-                            binwidth = 1) +
-    ggplot2::scale_fill_manual(
-      name = "Treatment",
-      values = palette,
-      breaks = c("0", "1"),
-      labels = c(controlLabel, treatmentLabel)
-    ) +
-    ggplot2::ggtitle(title) +
-    ggplot2::theme(
-      text = ggplot2::element_text(size = TextSize),
-      panel.grid.major = ggplot2::element_blank(),
-      panel.grid.minor = ggplot2::element_blank(),
-      panel.background = ggplot2::element_blank(),
-      legend.justification = c(1, 1),
-      legend.position = "top",
-      legend.key = ggplot2::element_rect(colour = NA),
-      plot.title = ggplot2::element_text(
-        hjust = 0.5,
-        face = "bold",
-        size = titleSize
-      )
-    )
-  
-  return(hist)
-}
-
-create_histogram <- function(data,
-                             title,
-                             x_label = "Months",
-                             y_label = "Frequency",
-                             TextSize = 26) {
-  # Remove NA from data
-  data <- data[!is.na(data)]
-  
-  # --- Define bin width as 1 month (≈30.44 days) ---
-  max_days <- max(data)
-  month_bins <- seq(0, max_days + 30.44, by = 30.44) # extend by one month to include max
-  
-  # Create histogram manually using monthly bins
-  h <- hist(data, breaks = month_bins, plot = FALSE)
-  
-  # Put into df format to work with ggplot
-  h_df <- data.frame(
-    breaks = h$breaks[-length(h$breaks)],
-    # left edges of bins
-    counts = h$counts
-  )
-  
-  # --- Create ggplot ---
-  h_plot <- ggplot2::ggplot(h_df, ggplot2::aes(x = breaks, y = counts)) +
-    ggplot2::geom_bar(stat = "identity",
-                      fill = "skyblue",
-                      color = "black") +
-    ggplot2::labs(title = title, x = x_label, y = y_label) +
-    ggplot2::scale_x_continuous(
-      breaks = seq(0, max(h_df$breaks), by = 12 * 30.44),
-      # tick every 6 months
-      labels = function(x)
-        round(x / 365.25)                                  # label in months
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      text = ggplot2::element_text(size = TextSize),
-      axis.text = ggplot2::element_text(size = TextSize)
-    )
-  return(h_plot)
-}
-
 # create love plot to compare SMD before and after weighting
 love_plot <- function(SMDs_dt,
                       SMD_names,
-                      plot_title,
                       plotColors,
                       xlab_title = "Standardized mean difference",
                       xmax,
@@ -224,7 +135,6 @@ love_plot <- function(SMDs_dt,
     ggplot2::geom_point(x = SMDs_dt[, SMD_names[2]],
                         colour = plotColors[2],
                         size = 4) +
-    ggplot2::ggtitle(plot_title) +
     ggplot2::xlab(xlab_title) +
     ggplot2::ylab("") +
     ggplot2::scale_x_continuous(limits = c(0, max(max(SMDs_dt), xmax)), breaks =
@@ -238,7 +148,8 @@ love_plot <- function(SMDs_dt,
       ),
       text = ggplot2::element_text(size = TextSize),
       axis.ticks.y = ggplot2::element_blank(),
-      axis.line.y = ggplot2::element_blank()
+      axis.line.y = ggplot2::element_blank(),
+      legend.title = ggplot2::element_blank()
     )
   
   if (length(SMD_names) == 4) {
@@ -255,27 +166,41 @@ love_plot <- function(SMDs_dt,
 
 # create Kaplan-Meier plot with effect measures
 create_KM_plot <- function(data,
-                           elig_cohort = NULL,
-                           horizon,
-                           unit = "years",
-                           model_PS,
-                           model_S = NULL, 
-                           w_meth,
-                           weights_meth = NULL,
-                           catvar = NULL,
-                           contvar = NULL,
+                           trt_var,
                            event_var,
                            time2event_var,
-                           trt_var,
-                           competing_event_var,
-                           n_bootstraps = 100,
-                           bootstrap_seed = 1,
-                           plotTitle = "",
-                           plotColors,
-                           TextSize = 28,
-                           MetricsText = 4,
-                           annotate_figure = TRUE) {
-  # unadjusted analysis
+                           w_meth,
+                           out_est, 
+                           horizon,
+                           unit = "months",
+                           manual_colors,
+                           trt_labels = c("trt=0", "trt=1")) {
+  # extract data from out_est
+  plot_data <- data.table(
+    time = out_est$est_full$time,
+    strata = factor(c(rep(0, length(out_est$est_full$time)), 
+                      rep(1, length(out_est$est_full$time))), 
+                    levels = c(0, 1)),
+    surv = c(1 - out_est$est_full$R0, 1 - out_est$est_full$R1),
+    lower = c(
+      1 - out_est$est_CI_full |> 
+        dplyr::filter(name == "conf.low") |> 
+        dplyr::pull(R0),
+      1 - out_est$est_CI_full |>
+        dplyr::filter(name == "conf.low") |> 
+        dplyr::pull(R1)
+    ),
+    upper = c(
+      1 - out_est$est_CI_full |> 
+        dplyr::filter(name == "conf.high") |> 
+        dplyr::pull(R0),
+      1 - out_est$est_CI_full |> 
+        dplyr::filter(name == "conf.high") |> 
+        dplyr::pull(R1)
+    )
+  )
+  
+  # get location for censoring, and risk table
   model_formula <- as.formula(paste0(
     "survival::Surv(",
     time2event_var,
@@ -284,227 +209,121 @@ create_KM_plot <- function(data,
     ") ~ ",
     trt_var
   ))
-  fit_args_unadjusted <- list(formula = model_formula,
-                              data = data,
-                              robust = TRUE)
-
-  # Create a list of arguments for the survfit call
-  if (w_meth != "") {
-    keep <- weights_meth > 0
-    fit_args <- list(
-      formula = model_formula,
-      data = data[keep],
-      robust = TRUE,
-      weights = weights_meth[keep]
-    )
+  
+  # define weights
+  if (w_meth=="unweighted"){
+    weights <- rep(1, nrow(data))
   } else{
-    fit_args <- fit_args_unadjusted
+    weights <- data[[paste0("sw_", w_meth)]]
   }
+  
+  # Create a list of arguments for the survfit call
+  keep <- weights > 0
+  fit_args <- list(
+    formula = model_formula,
+    data = data[keep],
+    robust = TRUE,
+    weights = weights[keep]
+  )
 
   # Use do.call to ensure the function call is constructed correctly
-  fit_unadjusted <- do.call(survival::survfit, fit_args_unadjusted)
-  fit <- do.call(survival::survfit, fit_args)
+  KM_fit <- do.call(survival::survfit, fit_args)
+  KM_curve <- summary(KM_fit, times = unique(plot_data$time))
   
-  # Create KM plot
-  KM_plot <- survminer::ggsurvplot(
-    fit = fit,
-    data = data,
-    risk.table = FALSE,
-    conf.int = TRUE,
-    legend.labs = c("Conservative", "Dialysis"),
-    legend.title = "",
-    xlab = "Time (months)",
-    ylab = "Survival probability (%)",
-    xscale = 365 / 2,
-    break.time.by = 365 / 2,
-    palette = c(plotColors[1], plotColors[2]),
-    legend = "none"
-  )$plot
-  
-  # Create KM table
-  KM_table <- survminer::ggsurvplot(
-    fit = fit_unadjusted,
-    data = data,
-    risk.table = TRUE,
-    conf.int = TRUE,
-    legend.labs = c("Conservative", "Dialysis"),
-    xlab = "",
-    xscale = 365 / 2,
-    break.time.by = 365 / 2,
-    palette = c(plotColors[1], plotColors[2])
-  )$table
-  
-  # set unit for RMST
-  if (unit == "years") {
-    div.fact <- 365.25
-  } else if (unit == "months") {
-    div.fact <- 30.5
-  } else if (unit == "days") {
-    div.fact <- 1
-  }
-  
-  # only needed for bootstraps to compute new model_PS on each bootstrap
-  est <- compute_absolute_relative_risks(
-    data = data,
-    horizon = horizon,
-    event_var = event_var,
-    competing_event_var = competing_event_var,
-    time2event_var = time2event_var,
-    trt = "trt",
-    w_meth = w_meth,
-    weights_meth = weights_meth,
-    catvar = catvar,
-    contvar = contvar
-  ) |>
-    dplyr::filter(time == round(horizon))
-  
-  est_CI <- risks_boots(
-    data = data,
-    horizon = horizon,
-    elig_cohort = elig_cohort,
-    model_PS = model_PS,
-    model_S = model_S, 
-    event_var = event_var,
-    competing_event_var = competing_event_var,
-    time2event_var = time2event_var,
-    trt_var = trt_var,
-    w_meth = w_meth,
-    weights_meth = weights_meth,
-    catvar = catvar,
-    contvar = contvar,
-    n_bootstraps = n_bootstraps,
-    bootstrap_seed = bootstrap_seed
-  ) |>
-    dplyr::filter(time == round(horizon))
-  
-  low_CI <- est_CI |>
-    dplyr::filter(name == "conf.low")
-  high_CI <- est_CI |>
-    dplyr::filter(name == "conf.high")
-  
-  R0 <- as.numeric(est$R0)
-  R0_lower <- as.numeric(low_CI$R0)
-  R0_upper <- as.numeric(high_CI$R0)
-  
-  R1 <- as.numeric(est$R1)
-  R1_lower <- as.numeric(low_CI$R1)
-  R1_upper <- as.numeric(high_CI$R1)
-  
-  RD <- as.numeric(est$RD)
-  RD_lower <- as.numeric(low_CI$RD)
-  RD_upper <- as.numeric(high_CI$RD)
-  
-  RR <- as.numeric(est$RR)
-  RR_lower <- as.numeric(low_CI$RR)
-  RR_upper <- as.numeric(high_CI$RR)
-  
-  RMST0 <- as.numeric(est$RMST0) / div.fact
-  RMST0_lower <- as.numeric(low_CI$RMST0) / div.fact
-  RMST0_upper <- as.numeric(high_CI$RMST0) / div.fact
-  
-  RMST1 <- as.numeric(est$RMST1) / div.fact
-  RMST1_lower <- as.numeric(low_CI$RMST1) / div.fact
-  RMST1_upper <- as.numeric(high_CI$RMST1) / div.fact
-  
-  dRMST <- as.numeric(est$dRMST) / div.fact
-  dRMST_lower <- as.numeric(low_CI$dRMST) / div.fact
-  dRMST_upper <- as.numeric(high_CI$dRMST) / div.fact
-  
-  HR <- as.numeric(est$HR)
-  HR_lower <- as.numeric(low_CI$HR)
-  HR_upper <- as.numeric(high_CI$HR)
-  
-  # remove only x and y scales; keep color scale intact
-  KM_plot$scales$scales <- Filter(
-    f = function(s)
-      ! inherits(s, "ScaleContinuousPosition"),
-    x = KM_plot$scales$scales
+  # censoring data
+  censor_dt <- data.table(
+    time = KM_curve$time,
+    strata = factor(as.numeric(KM_curve$strata)-1, 
+                    levels = c(0, 1)),
+    surv = KM_curve$surv,
+    n.censor = KM_curve$n.censor
   )
-  
-  # modify plot
-  KM_plot <- KM_plot +
+  censor_data <- censor_dt[n.censor>0]
+    
+  # create plot
+  KM_plot <- ggplot2::ggplot(
+    plot_data,
+    ggplot2::aes(
+      x = time,
+      y = surv,
+      color = strata,
+      fill = strata,
+      linetype = strata
+    )
+  ) +
+    ggplot2::geom_line(linewidth = 1) +
+    pammtools::geom_stepribbon(
+      ggplot2::aes(ymin = lower, ymax = upper),
+      alpha = 0.2, # Transparency for the shading
+      color = NA   # Remove the outline from the ribbon itself
+    ) +
+    ggplot2::geom_point(data = censor_data,  # add censoring
+                        ggplot2::aes(x = time, y = surv),
+                        shape = 3, 
+                        size = 2,
+                        stroke = 0.8,
+                        show.legend = FALSE) +
+    ggplot2::labs(
+      x = paste0("Time (", unit, ")"),
+      y = "Survival probability (%)"
+    ) +
+    ggplot2::theme_minimal() +
     ggplot2::theme(
-      plot.title = ggplot2::element_text(hjust = 0.5, face = "bold"),
-      text = ggplot2::element_text(size = TextSize)
+      legend.position = "bottom",
+      legend.title = ggplot2::element_blank(),
+      panel.grid.major = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.line = ggplot2::element_line(color = "black"),
+      axis.ticks = ggplot2::element_line(color = "black"),
+      text = ggplot2::element_text(size = 14),
+      plot.background = ggplot2::element_rect(fill = "white", color = NA)
     ) +
     ggplot2::scale_y_continuous(
+      limits = c(0, 1),
       breaks = seq(0, 1, by = 0.1),
       labels = seq(0, 100, by = 10),
-      expand = c(0, 0)     # remove padding below 0
+      expand = c(0, 0)
     ) +
     ggplot2::scale_x_continuous(
-      breaks = seq(0, 365 * horizon, by = 365 / 2),
+      breaks = seq(0, (horizon+1), by = 365 / 2), # break every 6 months
       labels = function(x)
-        round(x / 30)            # convert days → months
+        round(x / 30.5) # days -> months
     ) +
-    ggplot2::ggtitle(plotTitle)
+    ggplot2::scale_color_manual(labels = trt_labels,
+                                values = manual_colors) +
+    ggplot2::scale_fill_manual(guide = "none",
+                               values = manual_colors) +
+    ggplot2::scale_linetype_manual(guide = "none", 
+                                   values = c("solid", "solid"))
   
-  if (annotate_figure) {
-    KM_plot <- KM_plot +
-      ggplot2::annotate(
-        "text",
-        x = 0,
-        y = 0.15,
-        hjust = 0,
-        size = MetricsText,
-        label = paste0(
-          "N = ",
-          nrow(data),
-          "\n",
-          "Risk difference, % = ",
-          fmt_ci(RD * 100, RD_lower * 100, RD_upper * 100),
-          "\n",
-          "\u0394RMST, ",
-          unit,
-          " = ",
-          fmt_ci(dRMST, dRMST_lower, dRMST_upper),
-          "\n",
-          "Hazard ratio = ",
-          fmt_ci(HR, HR_lower, HR_upper, 2)
-        )
-      )
-  }
-  # store tables
-  KM_table <- KM_table +
-    ggplot2::theme(
-      plot.title   = ggplot2::element_blank(),
-      axis.title.y = ggplot2::element_blank(),
-      axis.text.x  = ggplot2::element_blank(),
-      axis.ticks   = ggplot2::element_blank(),
-      axis.line    = ggplot2::element_blank()
-    )
-  
-  return(
-    list(
-      KM_plot = KM_plot,
-      KM_table = KM_table,
-      R0 = R0,
-      R0_lower = R0_lower,
-      R0_upper = R0_upper,
-      R1 = R1,
-      R1_lower = R1_lower,
-      R1_upper = R1_upper,
-      RR = RR,
-      RR_lower = RR_lower,
-      RR_upper = RR_upper,
-      RD = RD,
-      RD_lower = RD_lower,
-      RD_upper = RD_upper,
-      RMST0 = RMST0,
-      RMST0_lower = RMST0_lower,
-      RMST0_upper = RMST0_upper,
-      RMST1 = RMST1,
-      RMST1_lower = RMST1_lower,
-      RMST1_upper = RMST1_upper,
-      dRMST = dRMST,
-      dRMST_lower = dRMST_lower,
-      dRMST_upper = dRMST_upper,
-      HR = HR,
-      HR_lower = HR_lower,
-      HR_upper = HR_upper
-    )
+  # find numbers at risk at each time point of interest
+  KM_table <- summary(KM_fit, times = seq(0, horizon, by = 365 / 2))
+  risk_table <- data.table(
+    time = KM_table$time / 365,
+    strata = factor(as.numeric(KM_table$strata)-1, 
+                    levels = c(0, 1)),
+    n.risk = round(KM_table$n.risk)  # after weighting might not be integer
   )
   
+  # create colors labels using HTML
+  colored_labels <- paste0("<span style='color:", manual_colors[1:2], "'>", trt_labels, "</span>")
+  
+  # create table
+  KM_table <- ggplot2::ggplot(risk_table, 
+                           ggplot2::aes(x = time, 
+                                        y = strata, 
+                                        label = n.risk)) +
+    ggplot2::geom_text() +
+    ggplot2::scale_x_continuous(limits = c(0, horizon / 365),
+                                breaks = seq(0, horizon / 365, by = 0.5)) +
+    ggplot2::scale_y_discrete(labels = colored_labels) + 
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      axis.text.y = ggtext::element_markdown(hjust = 1)
+    )
+  
+  return(list(KM_plot = KM_plot,
+              KM_table = KM_table))
 }
 
 # combine histograms on propensity score distributions
@@ -512,18 +331,6 @@ combine_PS_plots <- function(plot_list) {
   lapply(seq_along(plot_list), function(i) {
     plot_list[[i]]$hist + plot_list[[i]]$scaled_hist
   })
-}
-
-get_metric_positions <- function(n) {
-  if (n == 1) {
-    return(c(0.50))
-  } else if (n == 2) {
-    return(c(0.40, 0.60))
-  } else if (n == 3) {
-    return(c(0.37, 0.49, 0.65))
-  } else {
-    stop("Only 1, 2, or 3 metrics supported.")
-  }
 }
 
 create_forest_plot_all_measures <- function(dt,
@@ -594,7 +401,6 @@ create_forest_plot_all_measures <- function(dt,
     #------------------------------------------------------------
     metric_positions <- get_metric_positions(length(print_metrics))
     names(metric_positions) <- print_metrics
-    # metric_positions <- c(N = 0.36, Nonoverlap = 0.48, Imbalance = 0.65)
     metric_labels    <- c(N = "Patients,\nNo.",
                           Nonoverlap = "Non overlap,\nNo.",
                           Imbalance = "SMD > 0.1,\nNo.")
@@ -647,22 +453,15 @@ create_forest_plot_all_measures <- function(dt,
       center <- 0  # default fallback
     }
     
-    x_dev <- max(abs(dt[[paste0(measure, "_lower")]] - center), 
-                 abs(dt[[paste0(measure, "_upper")]] - center), 
-                 na.rm = TRUE)
-    x_min <- ifelse(measure=="RD", -75, 
-                    ifelse(measure=="dRMST", -14, 0))
-    x_max <- ifelse(measure=="RD", 75, 
-                    ifelse(measure=="dRMST", 14, 2))
-    x_break <- ifelse(measure=="RD", 10,
-                      ifelse(measure=="dRMST", 2, 0.2))
+    x_dev <- max(abs(dt[[paste0(measure, "_lower")]] - center), abs(dt[[paste0(measure, "_upper")]] - center), na.rm = TRUE)
+    x_min <- ifelse(measure == "RD", -75, ifelse(measure == "dRMST", -14, 0))
+    x_max <- ifelse(measure == "RD", 75, ifelse(measure == "dRMST", 14, 2))
+    x_break <- ifelse(measure == "RD", 10, ifelse(measure == "dRMST", 2, 0.2))
     forest <- ggplot2::ggplot(dt, ggplot2::aes(y = analysis_name)) +
       ggplot2::geom_point(ggplot2::aes(x = .data[[measure]]),
                           shape = 15,
                           size = 2) +
-      ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data[[paste0(measure, "_lower")]], 
-                                           xmax = .data[[paste0(measure, "_upper")]]),
-                              height = 0) +
+      ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data[[paste0(measure, "_lower")]], xmax = .data[[paste0(measure, "_upper")]]), height = 0) +
       ggplot2::geom_vline(
         xintercept = center,
         linetype = "dashed",
@@ -675,15 +474,19 @@ create_forest_plot_all_measures <- function(dt,
         color = "black"
       ) +
       ggplot2::coord_cartesian(clip = "off") +  # allow drawing in the padding area
-      ggplot2::scale_x_continuous(limits = c(x_min, x_max),
-                                  breaks = seq(x_min, x_max, x_break),
-                                  labels = seq(x_min, x_max, x_break)) +
-      ggplot2::theme(axis.title.x = ggplot2::element_blank(),
-                     axis.title.y = ggplot2::element_blank(),
-                     axis.text.y = ggplot2::element_blank(),
-                     axis.ticks.y = ggplot2::element_blank(),
-                     panel.background = ggplot2::element_blank(),
-                     plot.margin = ggplot2::margin(0, 0, -10, 0))
+      ggplot2::scale_x_continuous(
+        limits = c(x_min, x_max),
+        breaks = seq(x_min, x_max, x_break),
+        labels = seq(x_min, x_max, x_break)
+      ) +
+      ggplot2::theme(
+        axis.title.x = ggplot2::element_blank(),
+        axis.title.y = ggplot2::element_blank(),
+        axis.text.y = ggplot2::element_blank(),
+        axis.ticks.y = ggplot2::element_blank(),
+        panel.background = ggplot2::element_blank(),
+        plot.margin = ggplot2::margin(0, 0, -10, 0)
+      )
     
     plot_list[[paste0("header_table_", measure)]] <- header_table
     plot_list[[paste0("table_", measure)]] <- table
@@ -718,9 +521,22 @@ create_forest_plot_all_measures <- function(dt,
   return(list(combined_plot = combined_plot, dt = dt))
 }
 
+# metric positions of forest plots
+get_metric_positions <- function(n) {
+  if (n == 1) {
+    return(c(0.50))
+  } else if (n == 2) {
+    return(c(0.40, 0.60))
+  } else if (n == 3) {
+    return(c(0.37, 0.49, 0.65))
+  } else {
+    stop("Only 1, 2, or 3 metrics supported.")
+  }
+}
+
 # create effect plot of benefit versus risk
-effect_plot <- function(estimates_df, 
-                        y_middle, 
+effect_plot <- function(estimates_df,
+                        y_middle,
                         measure,
                         y_max_RD,
                         y_min_dRMST,
@@ -730,7 +546,7 @@ effect_plot <- function(estimates_df,
   
   # Define y-axis breaks based on measure
   if (measure == "HR") {
-    y_min <- 0 
+    y_min <- 0
     y_max <- y_max_HR
     y_breaks <- sort(c(seq(y_min, y_max, by = 0.2), y_middle))
   } else if (measure == "RD") {
@@ -756,22 +572,18 @@ effect_plot <- function(estimates_df,
   plot <- ggplot2::ggplot(estimates_df,
                           ggplot2::aes(x = effect_modifier_range, y = get(measure))) +
     ggplot2::geom_line() +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = get(paste0(measure, "_lower")), 
-                                      ymax = get(paste0(measure, "_upper"))), 
-                         alpha = 0.1) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = get(paste0(measure, "_lower")), ymax = get(paste0(measure, "_upper"))), alpha = 0.1) +
     ggplot2::geom_hline(
       yintercept = y_middle,
       linetype = "dashed",
       color = "darkgrey"
     ) +
-    ggplot2::scale_y_continuous(limits = c(y_min, y_max),
-                                breaks = y_breaks) +
+    ggplot2::scale_y_continuous(limits = c(y_min, y_max), breaks = y_breaks) +
     ggplot2::labs(x = NULL,
                   y = ifelse(
                     measure == "RD",
                     "Risk difference in %",
-                    ifelse(measure == "dRMST", "\u0394RMST in months", 
-                           "Hazard ratio")
+                    ifelse(measure == "dRMST", "\u0394RMST in months", "Hazard ratio")
                   )) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
@@ -787,7 +599,7 @@ effect_plot <- function(estimates_df,
     ggplot2::annotate(
       "text",
       x = x_min_text,
-      y = ifelse(measure=="dRMST", y_middle + padding_y, y_middle - padding_y),
+      y = ifelse(measure == "dRMST", y_middle + padding_y, y_middle - padding_y),
       label = "Favor dialysis",
       angle = 90,
       hjust = 1,
@@ -798,14 +610,14 @@ effect_plot <- function(estimates_df,
       "segment",
       x = x_min,
       xend = x_min,
-      y = ifelse(measure=="dRMST", y_middle + padding_y, y_middle - padding_y),
-      yend = ifelse(measure=="dRMST", y_max, y_min),
+      y = ifelse(measure == "dRMST", y_middle + padding_y, y_middle - padding_y),
+      yend = ifelse(measure == "dRMST", y_max, y_min),
       arrow = ggplot2::arrow(length = ggplot2::unit(0.2, "cm")),
       color = "black"
-    ) 
+    )
   
   # reverse y-axis for dRMST
-  if (measure=="dRMST"){
+  if (measure == "dRMST") {
     plot <- plot +
       ggplot2::scale_y_reverse(limits = c(y_max, y_min),
                                breaks = rev(y_breaks))
@@ -864,4 +676,132 @@ create_histogram_stratified <- function(dt, var_name, trt_name, manual_colors) {
   }
   
   return(hist_stratified)
+}
+
+calibration_plot <- function(out_measures){
+  # compute calibration plot data
+  calibration_data <- data.frame(
+    risk = out_measures$pseudos$risk,
+    observed = out_measures$smooth_pseudos$fit,
+    lower = out_measures$smooth_pseudos$fit - 1.96 * out_measures$smooth_pseudos$se.fit,
+    upper = out_measures$smooth_pseudos$fit + 1.96 * out_measures$smooth_pseudos$se.fit
+  )
+  calibration_data$lower <- pmax(0, calibration_data$lower)
+  calibration_data$upper <- pmin(1, calibration_data$upper)
+  
+  # create plot
+  cal_plot <- ggplot2::ggplot(calibration_data, 
+                              ggplot2::aes(x = risk, y = observed)) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(ymin = lower, ymax = upper),
+      fill = "steelblue",
+      alpha = 0.2
+    ) +
+    ggplot2::geom_line(linewidth = 0.75, alpha = 0.8) +
+    ggplot2::annotate(
+      "segment",
+      x = 0,
+      y = 0,
+      xend = 1,
+      yend = 1,
+      linetype = "dashed",
+      color = "gray40"
+    ) +
+    ggplot2::scale_y_continuous(limits = c(0, 1)) +
+    ggplot2::scale_x_continuous(limits = c(0, 1)) +
+    ggplot2::labs(y = "Observed Risks") +
+    ggthemes::theme_clean() +
+    ggplot2::theme(
+      axis.title.x = ggplot2::element_blank(),
+      axis.line.x = ggplot2::element_blank(),
+      axis.text.x = ggplot2::element_blank(),
+      axis.ticks.x = ggplot2::element_blank(),
+      legend.title = ggplot2::element_blank(),
+      legend.background = ggplot2::element_rect(colour = NA),
+      legend.position = "bottom",
+      plot.subtitle = ggplot2::element_text(size = 10),
+      panel.border = ggplot2::element_blank(),
+      plot.background = ggplot2::element_blank()
+    )
+  
+  # histogram of predicted risk
+  cal_hist <- ggplot2::ggplot(calibration_data, ggplot2::aes(x = risk)) +
+    ggplot2::geom_histogram(
+      binwidth = 0.01,
+      fill = "steelblue",
+      color = "white"
+    ) +
+    ggthemes::theme_clean() +
+    ggplot2::coord_cartesian(c(0, 1)) +
+    ggplot2::labs(title = NULL, y = "Count", x = "Predicted two-year mortality risk") +
+    ggplot2::theme(
+      panel.border = ggplot2::element_blank(),
+      plot.background = ggplot2::element_blank()
+    )
+  
+  return(list(cal_plot = cal_plot,
+              cal_hist = cal_hist))
+}
+
+# --- Helper: extract named metrics from compute_measures() output --------
+extract_metrics <- function(m) {
+  c(Intercept = m$Intercept, Slope = m$Slope, AUC = m$AUC)
+}
+
+# --- Helpers to subset metrics by cohort prefix -------------------------
+cohort_apparent <- function(prefix) {
+  c(Intercept = apparent[[paste0(prefix, "_Intercept")]],
+    Slope     = apparent[[paste0(prefix, "_Slope")]],
+    AUC       = apparent[[paste0(prefix, "_AUC")]])
+}
+
+cohort_boots <- function(prefix) {
+  data.frame(
+    Intercept = orig_boots[[paste0(prefix, "_Intercept")]],
+    Slope     = orig_boots[[paste0(prefix, "_Slope")]],
+    AUC       = orig_boots[[paste0(prefix, "_AUC")]]
+  )
+}
+
+cohort_optimism <- function(prefix) {
+  c(Intercept = optimism[[paste0(prefix, "_Intercept")]],
+    Slope     = optimism[[paste0(prefix, "_Slope")]],
+    AUC       = optimism[[paste0(prefix, "_AUC")]])
+}
+
+# --- Annotation builder -------------------------------------------------
+build_annotation <- function(apparent_vals, boot_vals, optimism_vals) {
+  corr  <- function(metric) apparent_vals[metric] - optimism_vals[metric]
+  ci_lo <- function(metric) quantile(boot_vals[[metric]], 0.025) - optimism_vals[metric]
+  ci_hi <- function(metric) quantile(boot_vals[[metric]], 0.975) - optimism_vals[metric]
+  
+  paste0(
+    "Calibration intercept ", fmt_ci(corr("Intercept"), ci_lo("Intercept"), ci_hi("Intercept"), digits = 2),
+    "\nCalibration slope ",   fmt_ci(corr("Slope"),     ci_lo("Slope"),     ci_hi("Slope"), digits = 2),
+    "\nAUC ",                 fmt_ci(corr("AUC"),       ci_lo("AUC"),       ci_hi("AUC"), digits = 2)
+  )
+}
+
+annotate_cal_plot <- function(cal_plot_obj, apparent_vals, boot_vals, optimism_vals) {
+  cal_plot_obj$cal_plot +
+    ggplot2::annotate(
+      "text",
+      x     = 0.01,
+      y     = 0.975,
+      label = build_annotation(apparent_vals, boot_vals, optimism_vals),
+      hjust = 0,
+      vjust = 1,
+      size  = 3
+    )
+}
+
+save_cal_plot <- function(cal_plot_obj, annotated_plot, filename) {
+  ggplot2::ggsave(
+    plot     = annotated_plot / cal_plot_obj$cal_hist +
+      patchwork::plot_layout(heights = c(3, 1)),
+    filename = file.path(results_path, "Supplemental", filename),
+    width    = 5,
+    height   = 5,
+    dpi      = 300
+  )
 }

@@ -1,27 +1,3 @@
-# Extract variables from formula that are categorical
-extract_categorical_vars_from_formula <- function(formula, data) {
-  # Get all variables in the formula
-  all_labels <- attributes(terms(formula))$term.labels
-  
-  # Create model frame using the data to evaluate variables
-  mf <- model.frame(formula, data)
-  
-  # Check if the variables are factors
-  factor_vars <- sapply(all_labels, function(var) {
-    # Check if the variable exists in the data and is a factor
-    if (var %in% colnames(mf)) {
-      return(is.factor(mf[[var]]))
-    } else {
-      return(FALSE) # Variable not found in data
-    }
-  })
-  
-  # Return a named logical vector indicating which variables are factors
-  names(factor_vars) <- all_labels
-  
-  return(factor_vars)
-}
-
 # Function to filter terms
 filter_terms_from_formula <- function(formula, exclude_vars) {
   # Extract the LHS and RHS of the formula
@@ -47,6 +23,7 @@ safe_sbw <- function(...) {
 }
 
 # obtain weights
+# TODO: add trt_var as argument
 create_weights <- function(data,
                            elig_cohort = NULL,
                            model_PS,
@@ -56,20 +33,25 @@ create_weights <- function(data,
                            contvar = NULL,
                            verbose = TRUE) {
   # Remove categorical variables with a single level from the ps formula
-  categorical_vars <- extract_categorical_vars_from_formula(model_PS, data)
+  all_vars <- all.vars(model_PS)[-1]  # drop outcome
   
-  vars_with_single_level <- colnames(data[, ..categorical_vars][, which(sapply(.SD, function(col)
-    length(unique(col)) == 1))])
-  
+  # Use table() for both factors and non-factors - captures zero-count levels in factors
+  vars_with_single_level <- all_vars[sapply(all_vars, function(v) {
+    x <- data[[v]]
+    x_clean <- x[!is.na(x)]
+    tbl <- table(x_clean)
+    non_zero_levels <- sum(tbl > 0)
+    non_zero_levels < 2
+  })]
   if (length(vars_with_single_level) != 0) {
     cat("Excluded variables from propensity score model: ",
         vars_with_single_level,
         "\n")
   }
-  model_PS <- filter_terms_from_formula(model_PS, vars_with_single_level)
+  model_PS_updated <- filter_terms_from_formula(model_PS, vars_with_single_level)
   
   # fit logistic regression for PS
-  denom.fit <- suppressWarnings(stats::glm(model_PS, family = stats::binomial(), data = data))
+  denom.fit <- suppressWarnings(stats::glm(model_PS_updated, family = stats::binomial(), data = data))
   coef_ps <- coef(denom.fit)          # return coefficients of propensity score model
   ci_ps <- confint.default(denom.fit) # Wald intervals beta_hat +/- 1.96*SE(beta_hat) sufficient for large samples
   
@@ -80,7 +62,7 @@ create_weights <- function(data,
   data[, ps := as.numeric(stats::predict(denom.fit, type = "response"))]
   
   ### INVERSE PROPENSITY TREATMENT WEIGHTING
-  if (w_meth == "") {
+  if (w_meth == "unweighted") {
     data$w <- rep(1, nrow(data))
   } else if (w_meth == "IPTW" | w_meth == "IPSW" | w_meth == "IPSW_IPTW") {
     # numerator of weights
@@ -231,13 +213,25 @@ create_weights <- function(data,
 }
 
 trim_propensity_scores <- function(data,
-                                   PS_varname, 
-                                   trt_varname, 
+                                   trt_var = "trt", 
+                                   w_meth = "unweighted",
+                                   model_PS,
+                                   catvar,
+                                   contvar,
                                    trim_meth = "common_range") {
   # extract data
   data <- copy(data)
-  data$ps <- data[, PS_varname, with = FALSE]
-  data$trt <- data[, trt_varname, with = FALSE]
+  data$trt <- data[, ..trt_var]
+  
+  # compute propensity scores
+  data$ps <- create_weights(
+      data = data,
+      model_PS = model_PS,
+      w_meth = w_meth,
+      catvar = catvar,
+      contvar = contvar,
+      verbose = FALSE
+      )$data$ps
   
   if (trim_meth == "common_range") {
     # Get min and max PS for each group
@@ -289,6 +283,18 @@ trim_propensity_scores <- function(data,
     overlap <- data[pref_score > 0.3 & pref_score < 0.7]
   }
   
+  if (w_meth != "unweighted"){
+    # re-estimate weights in overlap region
+    overlap <- create_weights(
+      data = overlap,
+      model_PS = model_PS,
+      w_meth = w_meth,
+      catvar = catvar,
+      contvar = contvar,
+      verbose = FALSE
+    )
+  }
+  
   return(list(overlap = overlap, nonoverlap = nonoverlap))
 }
 
@@ -331,15 +337,15 @@ summarize.weights <- function(data) {
   return(result)
 }
 
-# quantify extreme PS
-extreme_PS <- function(nonoverlap, ps) {
-  ps_df <- data.frame(stats = c(
-    nrow(nonoverlap),
-    sum(ps < 0.01),
-    sum(ps < 0.05),
-    sum(ps > 0.95),
-    sum(ps > 0.99)
-  ))
-  rownames(ps_df) <- c("nonoverlap", "# PS < 0.01", "# PS < 0.05", "# PS > 0.95", "# PS > 0.99")
-  return(ps_df)
-}
+# # quantify extreme PS
+# extreme_PS <- function(nonoverlap, ps) {
+#   ps_df <- data.frame(stats = c(
+#     nrow(nonoverlap),
+#     sum(ps < 0.01),
+#     sum(ps < 0.05),
+#     sum(ps > 0.95),
+#     sum(ps > 0.99)
+#   ))
+#   rownames(ps_df) <- c("nonoverlap", "# PS < 0.01", "# PS < 0.05", "# PS > 0.95", "# PS > 0.99")
+#   return(ps_df)
+# }

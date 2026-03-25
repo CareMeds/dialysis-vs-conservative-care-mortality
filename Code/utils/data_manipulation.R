@@ -38,36 +38,89 @@ calculate_age <- function(dt, birthdate_col, visitdate_col) {
 }
 
 # For each visit, retrieve information from the past up to 'max_roll_days' days
+# retrieve_past_info <- function(dt,
+#                                dictionary,
+#                                id_name,
+#                                date_name,
+#                                var_name,
+#                                lookback_years = 1, 
+#                                fill_with_zero = FALSE) {
+#   # Subset dictionary to non-NA values for this variable
+#   dict_sub <- dictionary[!is.na(get(var_name)), .(
+#     id = get(id_name),
+#     visit_date = get(date_name),
+#     value = get(var_name)
+#   )]
+#   
+#   # Subset rows where this variable is NA
+#   missing_sub <- dt[is.na(get(var_name)), .(id = get(id_name), 
+#                                             visit_date = get(date_name))]
+#   
+#   # Rolling join: find most recent value within lookback_years before visit_date
+#   filled <- dict_sub[missing_sub, 
+#                      on = .(id, visit_date),
+#                      roll = lookback_years]
+#   
+#   # Update with filled values
+#   dt[is.na(get(var_name)), (var_name) := filled$value]
+#   
+#   # set remaining NA to 0
+#   if (fill_with_zero) {
+#     dt[, (var_name) := lapply(.SD, \(x) fifelse(is.na(x), 0, x)),
+#        .SDcols = var_name]
+#   }
+#   
+#   return(dt)
+# }
 retrieve_past_info <- function(dt,
                                dictionary,
                                id_name,
                                date_name,
                                var_name,
-                               max_roll_days = 365, 
-                               setNA = FALSE) {
-  # Subset dictionary to non-NA values for this variable
+                               lookback_months = 12,
+                               fill_with_zero = FALSE) {
+  
+  # Subset dictionary to valid entries for the specific variable
   dict_sub <- dictionary[!is.na(get(var_name)), .(
     id = get(id_name),
-    visit_date = get(date_name),
+    dict_date = get(date_name),
     value = get(var_name)
   )]
   
-  # Subset rows where this variable is NA
-  missing_sub <- dt[is.na(get(var_name)), .(id = get(id_name), 
-                                            visit_date = get(date_name))]
+  # Sort dictionary to ensure the most recent record is selected via mult = 'last'
+  data.table::setkeyv(dict_sub, c("id", "dict_date"))
   
-  # Rolling join: find most recent value within max_roll_days before visit_date
-  filled <- dict_sub[missing_sub, 
-                     on = .(id, visit_date),
-                     roll = max_roll_days]
+  # Identify records with missing values
+  missing_sub <- dt[is.na(get(var_name)), .(
+    id = get(id_name),
+    visit_date = get(date_name)
+  )]
   
-  # Update with filled values
+  # Calculate the calendar-aware start date
+  if (is.infinite(lookback_months)) {
+    missing_sub[, start_date := as.Date("1900-01-01")]
+  } else {
+    # Using period() avoids the namespace export issue with months()
+    # and handles the rollback logic correctly
+    missing_sub[, start_date := lubridate::add_with_rollback(
+      visit_date,
+      lubridate::period(as.integer(-lookback_months), units = "months"),
+      roll_to_first = FALSE
+    )]
+  }
+  
+  # Non-equi join to find the last known value within the window
+  filled <- dict_sub[missing_sub,
+                     on = .(id, dict_date >= start_date,
+                            dict_date <= visit_date),
+                     mult = "last"]
+  
+  # Update the original data.table by reference
   dt[is.na(get(var_name)), (var_name) := filled$value]
   
-  # set remaining NA to 0
-  if (setNA) {
-    dt[, (var_name) := lapply(.SD, \(x) fifelse(is.na(x), 0, x)),
-       .SDcols = var_name]
+  # Set remaining NA values to 0 if requested
+  if (fill_with_zero) {
+    dt[is.na(get(var_name)), (var_name) := 0]
   }
   
   return(dt)
@@ -97,7 +150,8 @@ add_bday_rows <- function(dt,
                           birthdate_name,
                           id_name,
                           date_name,
-                          death_name) {
+                          death_name, 
+                          study_end) {
   # ensure unified names
   dt <- copy(dt)
   setnames(dt, id_name, "id")
@@ -106,16 +160,26 @@ add_bday_rows <- function(dt,
   setnames(dt, death_name, "date_of_death")
   
   # define xth bday
-  dt[, bday := data.table::as.IDate(lubridate::add_with_rollback(birthdate, lubridate::years(bday_year)))]
+  dt[, bday := data.table::as.IDate(lubridate::add_with_rollback(birthdate,
+                                                                 lubridate::years(bday_year)))]
   
   # identify patients with visits before xth birthday
   # and either had a visit after xth birthday or died after xth birhtday
+  # eligible_bday <- dt[, .(
+  #   visit_before = any(visit_date < bday[1]),
+  #   visit_after  = any(visit_date > bday[1]),
+  #   died_after = any(is.na(date_of_death) | date_of_death > bday[1])
+  # ), by = id][(visit_before & visit_after) |
+  #               (visit_before & died_after), id]
   eligible_bday <- dt[, .(
+    bday_val     = bday[1],
     visit_before = any(visit_date < bday[1]),
     visit_after  = any(visit_date > bday[1]),
-    died_after = any(is.na(date_of_death) | date_of_death > bday[1])
-  ), by = id][(visit_before & visit_after) |
-                (visit_before & died_after), id]
+    died_after   = any(is.na(date_of_death) | date_of_death > bday[1])
+  ), by = id][
+    bday_val <= study_end & ((visit_before & visit_after) | (visit_before & died_after)), 
+    id
+  ]
   
   # add xth birthday row
   bday_rows <- dt[id %in% eligible_bday, 
@@ -148,22 +212,52 @@ add_bday_rows <- function(dt,
 }
 
 # determine end of eligibility
-eligibility_end <- function(visit_date, next_visit, date_of_death) {
-  # create variable that adds one year to visit_date
-  next_visit_plus_1_yr <- data.table::as.IDate(lubridate::add_with_rollback(visit_date, lubridate::years(1)))
+# eligibility_end <- function(visit_date, next_visit, date_of_death, study_end) {
+#   # create variable that adds one year to visit_date
+#   next_visit_plus_1_yr <- data.table::as.IDate(lubridate::add_with_rollback(visit_date, lubridate::years(1)))
+#   
+#   # return end of eligibliity
+#   # Case 1: next visit exists and is within 1 year
+#   # if same day, keep it as is otherwise subtract 1 day
+#   # Case 2: otherwise, eligibility ends at the earliest of:
+#   #   - 1 year after current visit
+#   #   - one day before date of death
+#   data.table::fifelse(
+#     !is.na(next_visit) & next_visit <= next_visit_plus_1_yr,
+#     data.table::fifelse(visit_date == next_visit, next_visit, next_visit - 1),
+#     pmin(
+#       data.table::as.IDate(next_visit_plus_1_yr),
+#       date_of_death - 1,
+#       na.rm = TRUE
+#     )
+#   )
+# }
+eligibility_end <- function(visit_date, next_visit, date_of_death, study_end) {
   
-  # return end of eligibliity
-  # Case 1: next visit exists and is within 1 year
-  # if same day, keep it as is otherwise subtract 1 day
-  # Case 2: otherwise, eligibility ends at the earliest of:
-  #   - 1 year after current visit
-  #   - one day before date of death
+  # Calculate 1 year forward using robust calendar logic
+  # Using period() to avoid potential namespace issues with years()
+  plus_1_yr <- data.table::as.IDate(lubridate::add_with_rollback(
+    visit_date, 
+    lubridate::period(1, units = "years"),
+    roll_to_first = FALSE
+  ))
+  
+  # Return end of eligibility
   data.table::fifelse(
-    !is.na(next_visit) & next_visit <= next_visit_plus_1_yr,
+    # Case 1: Next visit exists and occurs within the 1-year window
+    !is.na(next_visit) & next_visit <= plus_1_yr,
+    
+    # If same day (e.g., multiple records), end date is today; otherwise, subtract 1 day
     data.table::fifelse(visit_date == next_visit, next_visit, next_visit - 1),
+    
+    # Case 2: No next visit within 1 year. Eligibility ends at the earliest of:
+    # - 1 year after current visit
+    # - One day before date of death (if applicable)
+    # - The study end date
     pmin(
-      data.table::as.IDate(next_visit_plus_1_yr),
+      plus_1_yr,
       date_of_death - 1,
+      study_end,
       na.rm = TRUE
     )
   )
