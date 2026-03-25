@@ -30,8 +30,11 @@ source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conser
 # Sensitivity analysis for positivity
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/7 - SA positivity.R")
 
-# Sensitivity analysis for positivity
+# Time-to-dialysis
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/8 - Competing risk time-to-dialysis.R")
 
 # Example patient in methods
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/9 - Example Supplemental Methods.R")
+
+# Sensitivity analysis for unmeasured confounding
+source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/10 - SA unmeasured confounding.R")
