@@ -1,12 +1,19 @@
 # Effect of Choosing Dialysis versus Comprehensive Conservative Care on Survival in Older Adults with Advanced CKD: Nationwide Target Trial Emulation Study
 
 #### Carolien C.H.M. Maas, PhD[1,2], Xuerui Zhang, MD[1], Juan-Jesus Carrero, PhD[2,3], Antoine Créon, MD, MSc[2], Roosa Lankinen, MD, PhD[2], Ilaria Prosepe, PhD[4], Friedo W. Dekker, PhD[1], Willem Jan W. Bos, MD, PhD[5,6], Marie Evans, MD, PhD[7]*, Edouard L. Fu, PhD[1,2]*
+
 [1]Department of Clinical Epidemiology, Leiden University Medical Center, Leiden, The Netherlands
+
 [2]Department of Medical Epidemiology and Biostatistics, Karolinska Institute, Stockholm, Sweden
+
 [3]Department of Clinical Sciences, Danderyd University Hospital, Karolinska Institutet, Stockholm, Sweden
+
 [4]Department of Biomedical Data Sciences, Leiden University Medical Center, Leiden, The Netherlands
+
 [5]Department of Internal Medicine, St. Antonius Ziekenhuis, Nieuwegein, the Netherlands
+
 [6]Department of Internal Medicine, Leiden University Medical Centre, Leiden, the Netherlands
+
 [7]Department of Clinical Science, Intervention and Technology, Division of Renal Medicine, Karolinska Institutet, Sweden
 
 ## 0 - Data preparation
