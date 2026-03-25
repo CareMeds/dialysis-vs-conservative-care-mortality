@@ -28,7 +28,6 @@ source("Code/utils/plots.R")
 source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
-source("Code/utils/risk_model.R")
 
 ################################################################################
 ### Load data ##################################################################
@@ -100,161 +99,149 @@ openxlsx::write.xlsx(
   file = paste0(results_path, "Supplemental/Table_S4.xlsx")
 )
 
-# psuedovalues
-Score <- riskRegression::Score(
-  object = list("model" = risk_model),
-  formula = Surv(time2event_death_2y, event_death_2y) ~ 1,
-  cens.method = "pseudo",
-  data = baseline,
-  times = horizon,
-  conf.int = TRUE,
-  plots = "calibration"
-)
-riskRegression::plotCalibration(
-  Score,
-  method = "quantile",
-  # Groups patients into bins (usually deciles)
-  round = TRUE,
-  # Rounds the numbers for cleaner axis
-  cens.method = "pseudo",
-  # Matches your Score settings
-  xlab = "Predicted Risk",
-  ylab = "Observed Risk",
-  main = "2-Year Mortality Calibration Plot"
-)
+# plot PS versus 2-year predicted mortality risk
+baseline[, lp_risk := predict(risk_model, newdata = .SD)][, pred_risk := PredictionTools::fun.event(h0 = h0, lp = lp_risk)]
 
-pseudos <- data.frame(Score$Calibration$plotframe)
-pseudos$cll_pred <- log(-log(1 - pseudos$risk))
-
-# smooth pseudo values
-smooth_pseudos <- predict(stats::loess(
-  pseudovalue ~ risk,
-  data = pseudos,
-  degree = 1,
-  span = 0.5
-),
-se = TRUE)
-
-# calibration intercept
-fit_cal_int <- geepack::geese(
-  pseudovalue ~ offset(cll_pred),
-  data = pseudos,
-  id = riskRegression_ID,
-  scale.fix = TRUE,
-  family = gaussian,
-  mean.link = "cloglog",
-  corstr = "independence",
-  jack = TRUE
-)
-Intercept <- summary(fit_cal_int)$mean$estimate
-Intercept_SE <- summary(fit_cal_int)$mean$san.se
-
-# calibration slope
-fit_cal_slope <- geepack::geese(
-  pseudovalue ~ offset(cll_pred) + cll_pred,
-  data = pseudos,
-  id = riskRegression_ID,
-  scale.fix = TRUE,
-  family = gaussian,
-  mean.link = "cloglog",
-  corstr = "independence",
-  jack = TRUE
-)
-Slope <- summary(fit_cal_slope)$mean["cll_pred", ]$estimate
-Slope_SE <- summary(fit_cal_slope)$mean["cll_pred", ]$san.se
-
-# calibration plot
-calibration_data <- data.frame(
-  risk = pseudos$risk,
-  observed = smooth_pseudos$fit,
-  lower = smooth_pseudos$fit - 1.96 * smooth_pseudos$se.fit,
-  upper = smooth_pseudos$fit + 1.96 * smooth_pseudos$se.fit
-)
-calibration_data$lower <- pmax(0, calibration_data$lower)
-calibration_data$upper <- pmin(1, calibration_data$upper)
-cal_plot <- ggplot2::ggplot(calibration_data, ggplot2::aes(x = risk, y = observed)) +
-  ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper),
-                       fill = "steelblue",
-                       alpha = 0.2) +
-  ggplot2::geom_line(linewidth = 0.75, alpha = 0.8) +
-  ggplot2::annotate(
-    "segment",
-    x = 0,
-    y = 0,
-    xend = 1,
-    yend = 1,
-    linetype = "dashed",
-    color = "gray40"
+# Creating a single plot stratified by trt
+pred_risk_plot <- ggplot2::ggplot(baseline,
+                                  ggplot2::aes(
+                                    x = pred_risk,
+                                    y = ps,
+                                    color = as.factor(trt),
+                                    shape = as.factor(trt)
+                                  )) +
+  ggplot2::geom_point(alpha = 0.7) +
+  ggplot2::scale_color_manual(
+    values = c(manual_colors[1], manual_colors[2]),
+    labels = c("0" = "Conservative care", "1" = "Dialysis")
   ) +
-  ggplot2::scale_y_continuous(limits = c(0, 1)) +
-  ggplot2::scale_x_continuous(limits = c(0, 1)) +
-  ggplot2::labs(y = "Observed Risks") +
-  ggplot2::annotate(
-    "text",
-    x = 0.01,
-    y = 0.975,
-    label = paste0(
-      "Calibration intercept ",
-      sprintf("%.2f", Intercept),
-      " (",
-      sprintf("%.2f", Intercept - qnorm(0.975) * Intercept_SE),
-      ", ",
-      sprintf("%.2f", Intercept + qnorm(0.975) * Intercept_SE),
-      ")\nCalibration slope ",
-      sprintf("%.2f", 1 + Slope),
-      " (",
-      sprintf("%.2f", 1 + (Slope - qnorm(0.975) * Slope_SE)),
-      ", ",
-      sprintf("%.2f", 1 + (Slope + qnorm(0.975) * Slope_SE)),
-      ")\nAUC ",
-      sprintf("%.2f", Score$AUC$score[["AUC"]]),
-      " (",
-      sprintf("%.2f", Score$AUC$score[["lower"]]),
-      ", ",
-      sprintf("%.2f", Score$AUC$score[["upper"]]),
-      ")"
-    ),
-    hjust = 0,
-    vjust = 1
+  ggplot2::scale_shape_manual(
+    values = c(16, 17),
+    labels = c("0" = "Conservative care", "1" = "Dialysis")
   ) +
-  ggthemes::theme_clean() +
-  ggplot2::theme(
-    axis.title.x = ggplot2::element_blank(),
-    axis.line.x = ggplot2::element_blank(),
-    axis.text.x = ggplot2::element_blank(),
-    axis.ticks.x = ggplot2::element_blank(),
-    legend.title = ggplot2::element_blank(),
-    legend.background = ggplot2::element_rect(colour = NA),
-    legend.position = "bottom",
-    plot.subtitle = ggplot2::element_text(size = 10),
-    panel.border = ggplot2::element_blank(),
-    plot.background = ggplot2::element_blank()
-  )
-hist <- ggplot2::ggplot(calibration_data, ggplot2::aes(x = risk)) +
-  ggplot2::geom_histogram(binwidth = 0.01,
-                          fill = "steelblue",
-                          color = "white") +
-  ggthemes::theme_clean() +
-  ggplot2::coord_cartesian(c(0, 1)) +
-  ggplot2::labs(title = NULL, y = "Count", x = "Predicted two-year mortality risk") +
-  ggplot2::theme(
-    panel.border = ggplot2::element_blank(),
-    plot.background = ggplot2::element_blank()
-  )
+  ggplot2::labs(
+    x = "Predicted 2-year mortality risk",
+    y = "Propensity score",
+    color = "Treatment choice",
+    shape = "Treatment choice"
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(plot.background = ggplot2::element_rect("white"))
 ggplot2::ggsave(
-  plot = cal_plot / hist +
-    patchwork::plot_layout(heights = c(3, 1)),
-  filename = paste0(results_path, "Supplemental/Figure_M2_calibration.png"),
-  width = 5,
+  plot = pred_risk_plot,
+  filename = paste0(results_path, "Other/Figure_PS_risk.png"),
+  width = 7,
   height = 5,
   dpi = 300
 )
 
 ################################################################################
+### Internal validation
+################################################################################
+# --- Initialise storage --------------------------------------------------
+n_bootstraps_elig <- 1000
+n_iter <- n_bootstraps_elig + 1L          # iteration 1 = original sample
+
+metrics <- list(
+  orig = data.frame(
+    elig_Intercept = numeric(n_iter),
+    elig_Slope     = numeric(n_iter),
+    elig_AUC       = numeric(n_iter),
+    trt_Intercept  = numeric(n_iter),
+    trt_Slope      = numeric(n_iter),
+    trt_AUC        = numeric(n_iter)
+  ),
+  boot = data.frame(
+    elig_Intercept = numeric(n_iter),
+    elig_Slope     = numeric(n_iter),
+    elig_AUC       = numeric(n_iter),
+    trt_Intercept  = numeric(n_iter),
+    trt_Slope      = numeric(n_iter),
+    trt_AUC        = numeric(n_iter)
+  )
+)
+
+cal_plots <- list()
+
+# --- Main loop -----------------------------------------------------------
+for (B in seq_len(n_iter)) {
+  
+  is_original <- (B == 1L)
+  
+  # 1. Draw samples -------------------------------------------------------
+  if (is_original) {
+    boot_elig    <- elig_cohort
+    boot_trt_dec <- baseline
+  } else {
+    boot_elig    <- elig_cohort[sample(nrow(elig_cohort), replace = TRUE), ]
+    boot_trt_dec <- baseline[sample(nrow(baseline),      replace = TRUE), ]
+  }
+  
+  # 2. Fit risk model on bootstrap sample ---------------------------------
+  boot_risk_model <- rms::cph(
+    survival::Surv(time2event_death_2y, event_death_2y) ~
+      age + egfr2021 + cancer + dm + ihd + vhd + pvd + female + albumin,
+    data   = boot_elig,
+    method = "breslow",
+    y      = TRUE,
+    x      = TRUE
+  )
+  
+  # 3. Evaluate on original sample (apparent for B=1, optimism for B>1) --
+  elig_orig <- compute_measures(boot_risk_model, data = elig_cohort,
+                                plot = is_original)
+  trt_orig  <- compute_measures(boot_risk_model, data = baseline,
+                                plot = is_original)
+  
+  if (is_original) {
+    cal_plots$elig <- calibration_plot(elig_orig)
+    cal_plots$trt  <- calibration_plot(trt_orig)
+  }
+  
+  # 4. Evaluate on bootstrap sample (needed only for optimism correction) -
+  if (!is_original) {
+    elig_boot <- compute_measures(boot_risk_model, data = boot_elig)
+    trt_boot  <- compute_measures(boot_risk_model, data = boot_trt_dec)
+  }
+  
+  # 5. Store results ------------------------------------------------------
+  metrics$orig[B, ] <- c(extract_metrics(elig_orig),
+                         extract_metrics(trt_orig))
+  
+  if (!is_original) {
+    metrics$boot[B, ] <- c(extract_metrics(elig_boot),
+                           extract_metrics(trt_boot))
+  }
+}
+
+# --- Compute optimism (rows 2:n = bootstrap iterations) -----------------
+# metrics$boot[1, ] is never filled (all zeros) — optimism correctly uses [-1, ]
+optimism   <- colMeans(metrics$orig[-1, ] - metrics$boot[-1, ])
+apparent   <- metrics$orig[1, ]
+orig_boots <- metrics$orig[-1, ]
+
+# --- Build and save plots -----------------------------------------------
+for (cohort in list(list(prefix = "elig", label = "elig"),
+                    list(prefix = "trt",  label = "trt"))) {
+  
+  annotated <- annotate_cal_plot(
+    cal_plot_obj  = cal_plots[[cohort$prefix]],
+    apparent_vals = cohort_apparent(cohort$prefix),
+    boot_vals     = cohort_boots(cohort$prefix),
+    optimism_vals = cohort_optimism(cohort$prefix)
+  )
+  
+  save_cal_plot(
+    cal_plot_obj   = cal_plots[[cohort$prefix]],
+    annotated_plot = annotated,
+    filename       = paste0("Figure_M1_calibration_", cohort$label, ".png")
+  )
+}
+
+################################################################################
 ### Continuous HTE
 ################################################################################
 data_sets <- c("baseline", "baseline[Davies_score >= 2]")
-nr_bootstraps <- 2
 for (nr_analysis in 1:2) {
   # determine LP and survival probability using risk model
   analysis_data <- eval(parse(text = data_sets[nr_analysis]))
@@ -276,12 +263,14 @@ for (nr_analysis in 1:2) {
       data = bootstrap,
       model_PS = model_PS,
       w_meth = "IPTW",
+      catvar = catvar,
+      contvar = contvar,
       verbose = FALSE
     )
     bootstrap$sw_IPTW <- bootstrap_reestimated$data$w
-  
+    
     # check SMDs
-    if (B == 1) {    
+    if (B == 1) {
       table_one_weighted <- create_baseline_table(
         data = bootstrap_reestimated$data,
         id_name = "LOPNR",
@@ -289,12 +278,14 @@ for (nr_analysis in 1:2) {
         vars = listvar,
         categoricalVars = catvar,
         IQRVars = non_normal_vars,
-        treatmentColumn = "trt",
+        treatmentColumn = trt_var,
         treatmentLabel = treatment_label,
         controlLabel = control_label,
         tableCaption = paste("Subgroup", 2)
       )
-      cat("Number of SMDs > 0.1", sum(table_one_weighted$smd_table > 0.1), "\n")
+      cat("Number of SMDs > 0.1",
+          sum(table_one_weighted$smd_table > 0.1),
+          "\n")
     }
     
     # compute HTE across age
@@ -362,7 +353,7 @@ for (nr_analysis in 1:2) {
     hist_stratified <- create_histogram_stratified(
       dt = analysis_data,
       var_name = effect_modifier,
-      trt_name = "trt",
+      trt_name = trt_var,
       manual_colors = manual_colors
     )
     
@@ -401,8 +392,11 @@ for (nr_analysis in 1:2) {
         y_middle = ifelse(measure == "HR", 1, 0),
         measure = measure,
         y_max_RD = ifelse(nr_analysis == 1, 21, 65),
+        # y_max_RD = ifelse(nr_analysis == 1, 14, 14),
         y_min_dRMST = ifelse(nr_analysis == 1, -3, -9),
+        # y_min_dRMST = ifelse(nr_analysis == 1, -2, -2),
         y_max_HR = ifelse(nr_analysis == 1, 1.3, 1.9)
+        # y_max_HR = ifelse(nr_analysis == 1, 3, 3)
       )
       
       # control x-axis of effect plot
@@ -469,7 +463,7 @@ for (nr_analysis in 1:2) {
       ifelse(
         nr_analysis == 1,
         "Main/Figure_3.png",
-        "Supplemental/Figure_S6_DCS.png"
+        "Supplemental/Figure_S7_DCS.png"
       )
     ),
     width = 20,
@@ -546,9 +540,9 @@ save(
   catvar,
   contvar,
   non_normal_vars,
-  outcome_vars,
-  time2outcome_vars,
-  competing_events_vars,
+  outcome_var,
+  time2outcome_var,
+  competing_events_var,
   treatment_label,
   control_label,
   baseline,
@@ -556,10 +550,12 @@ save(
   coef_PS_overall,
   elig_cohort,
   w_meths,
+  trt_var,
   horizon,
   unit,
   n_bootstraps,
   manual_colors,
   estimates_df,
+  metrics,
   file = file.path("Data/cohort_with_prob.Rdata")
 )

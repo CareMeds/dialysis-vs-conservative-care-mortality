@@ -9,7 +9,9 @@ knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
 set.seed(1)
 
 # set directory
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
+setwd(
+  "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
+)
 results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
 # load libraries
@@ -33,32 +35,32 @@ load("Data/merged_ckd.Rdata")
 id_name <- "LOPNR"
 dia_dt <- merged_ckd[!is.na(krt_startdate) &
                        !is.na(krt_modality) &
-                       krt_modality != "TX",
-                     c(id_name, "krt_startdate", "krt_modality"), 
-                     with = FALSE][, unique(.SD)]
+                       krt_modality != "TX", c(id_name, "krt_startdate", "krt_modality"), with = FALSE][, unique(.SD)]
 
 # merge with cohort
-time_to_dia_dt <- merge(baseline, 
-                        dia_dt, 
-                        by = id_name,
-                        all.x = TRUE)
+time_to_dia_dt <- merge(baseline, dia_dt, by = id_name, all.x = TRUE)
 
 # compute time to dialysis
 time_to_dia_dt[, `:=`(
   time_until_dialysis = lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
   time_until_dialysis_days = lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "days"),
-  time_until_HD = fifelse(krt_modality == "HD",
-                              lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
-                              NA),
-  time_until_PD = fifelse(krt_modality == "PD",
-                              lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
-                              NA)
+  time_until_HD = fifelse(
+    krt_modality == "HD",
+    lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
+    NA
+  ),
+  time_until_PD = fifelse(
+    krt_modality == "PD",
+    lubridate::time_length(lubridate::interval(visit_date, krt_startdate), "years"),
+    NA
+  )
 )]
 
 # create time and event variable for dialysis
 dialysis_df <- time_to_dia_dt[trt == 1]
-dialysis_long <- dialysis_df[, .(LOPNR, krt_modality, 
-                                 time_until_dialysis, 
+dialysis_long <- dialysis_df[, .(LOPNR,
+                                 krt_modality,
+                                 time_until_dialysis,
                                  time_until_HD,
                                  time_until_PD)] |>
   tidyr::pivot_longer(
@@ -68,25 +70,26 @@ dialysis_long <- dialysis_df[, .(LOPNR, krt_modality,
   ) |>
   dplyr::mutate(
     time_years = time,
-    type = dplyr::recode(type,
-                         time_until_dialysis = "All Dialysis",
-                         time_until_HD       = "Hemodialysis",
-                         time_until_PD       = "Peritoneal Dialysis")
+    type = dplyr::recode(
+      type,
+      time_until_dialysis = "All Dialysis",
+      time_until_HD       = "Hemodialysis",
+      time_until_PD       = "Peritoneal Dialysis"
+    )
   ) |>
-  dplyr::filter(is.finite((time_years))) # remove censored individuals (TODO: write)
+  dplyr::filter(is.finite((time_years))) # TODO: write
 
 # histogram
-time_hist <- ggplot2::ggplot(dialysis_long, 
-                             ggplot2::aes(x = time_years, fill = type)) +
-  ggplot2::geom_histogram(alpha = 0.6, 
-                 binwidth = 1/12, 
-                 boundary = 0,
-                 color = "white",
-                 linewidth = 0.1) +
-  ggplot2::facet_wrap(~ type) +
-  ggplot2::scale_x_continuous(
-    breaks = seq(0, max(dialysis_long$time_years, na.rm = TRUE), by = 1)
+time_hist <- ggplot2::ggplot(dialysis_long, ggplot2::aes(x = time_years, fill = type)) +
+  ggplot2::geom_histogram(
+    alpha = 0.6,
+    binwidth = 1 / 12,
+    boundary = 0,
+    color = "white",
+    linewidth = 0.1
   ) +
+  ggplot2::facet_wrap( ~ type) +
+  ggplot2::scale_x_continuous(breaks = seq(0, max(dialysis_long$time_years, na.rm = TRUE), by = 1)) +
   ggplot2::scale_fill_brewer(palette = "Set1") +
   ggplot2::theme_minimal(base_size = 18) +
   ggplot2::theme(
@@ -95,19 +98,15 @@ time_hist <- ggplot2::ggplot(dialysis_long,
     plot.tag = ggplot2::element_text(face = "bold"),
     plot.title = ggplot2::element_text(hjust = 0.5)
   ) +
-  ggplot2::labs(
-    x = "Years",
-    y = "Count",
-    title = "Time until dialysis"
-  ) + 
-  ggplot2::labs(tag = "A") 
+  ggplot2::labs(x = "Years", y = "Count", title = "Time until dialysis") +
+  ggplot2::labs(tag = "A")
 time_hist_zoomed <- time_hist +
-  ggplot2::scale_x_continuous(limit = c(0, 2),
-                              breaks = seq(0, 2, 0.5),
-                              labels = c(0, 6, 12, 18, 24)) + 
-  ggplot2::labs(tag = "B",
-                title = "Time until dialysis, zoomed in on first 2 years",
-                x = "Months") +
+  ggplot2::scale_x_continuous(
+    limit = c(0, 2),
+    breaks = seq(0, 2, 0.5),
+    labels = c(0, 6, 12, 18, 24)
+  ) +
+  ggplot2::labs(tag = "B", title = "Time until dialysis, zoomed in on first two years", x = "Months") +
   ggplot2::theme(
     plot.tag = ggplot2::element_text(face = "bold"),
     plot.title = ggplot2::element_text(hjust = 0.5)
@@ -120,28 +119,51 @@ ggplot2::ggsave(
   dpi = 300
 )
 
-cat(" Number excluded:",
-    dialysis_df[is.na(time_until_dialysis) | time_until_dialysis > 2, .N], "\n",
-    "Number administrative censoring:",
-    dialysis_df[is.na(time_until_dialysis), .N], "\n",
-    "Number competing event:",
-    dialysis_df[time_until_dialysis > 2, .N], "\n",
-    "Number of patients that chose dialysis starting dialysis within two years:",
-    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis <= 2, .N], "\n",
-    "Number of patients that chose HD starting dialysis within two years:",
-    dialysis_df[!is.na(time_until_HD) & time_until_HD <= 2, .N], "\n",
-    "Number of patients that chose PD starting dialysis within two years:",
-    dialysis_df[!is.na(time_until_PD) & time_until_PD <= 2, .N], "\n",
-    "Number of patients that chose dialysis starting dialysis within 3 months:",
-    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis <= 3/12, .N], "\n",
-    "Number of patients that chose dialysis starting dialysis between 3-6 months:",
-    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 3/12 & time_until_dialysis <= 0.5, .N], "\n",
-    "Number of patients that chose dialysis starting dialysis between 6-12 months:",
-    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 0.5 & time_until_dialysis <= 1, .N], "\n",
-    "Number of patients that chose dialysis starting dialysis between 12-24 months:",
-    dialysis_df[!is.na(time_until_dialysis) & time_until_dialysis > 1 & time_until_dialysis <= 2, .N], "\n",
-    "Number of patients that chose dialysis but died before starting dialysis within two years:",
-    dialysis_df[time2event_death_2y < time_until_dialysis_days, .N], "\n")
+cat(
+  " Maximum time until dialysis                                         :",
+  max(dialysis_df$time_until_dialysis, na.rm=TRUE),
+  "\n",
+  "# administrative censoring                                          :",
+  dialysis_df[is.na(time_until_dialysis), .N],
+  "\n",
+  "# competing event                                                   :",
+  dialysis_df[time_until_dialysis > 2, .N],
+  "\n",
+  "# patients that chose dialysis starting dialysis within two years   :",
+  dialysis_df[!is.na(time_until_dialysis) &
+                time_until_dialysis <= 2, .N],
+  "\n",
+  "# patients that chose HD starting dialysis within two years         :",
+  dialysis_df[!is.na(time_until_HD) &
+                time_until_HD <= 2, .N],
+  "\n",
+  "# patients that chose PD starting dialysis within two years         :",
+  dialysis_df[!is.na(time_until_PD) &
+                time_until_PD <= 2, .N],
+  "\n",
+  "# patients that chose dialysis starting dialysis within 3 months    :",
+  dialysis_df[!is.na(time_until_dialysis) &
+                time_until_dialysis <= 3 / 12, .N],
+  "\n",
+  "# patients that chose dialysis starting dialysis between 3-6 months :",
+  dialysis_df[!is.na(time_until_dialysis) &
+                time_until_dialysis > 3 / 12 &
+                time_until_dialysis <= 0.5, .N],
+  "\n",
+  "# patients that chose dialysis starting dialysis between 6-12 months:",
+  dialysis_df[!is.na(time_until_dialysis) &
+                time_until_dialysis > 0.5 &
+                time_until_dialysis <= 1, .N],
+  "\n",
+  "# patients that chose dialysis starting dialysis between 12-24 months:",
+  dialysis_df[!is.na(time_until_dialysis) &
+                time_until_dialysis > 1 &
+                time_until_dialysis <= 2, .N],
+  "\n",
+  "# patients that chose dialysis but died before starting dialysis within two years:",
+  dialysis_df[time2event_death_2y < time_until_dialysis_days, .N],
+  "\n"
+)
 
 ################################################################################
 ### Baseline characteristics for full eligibility cohort and cohort after weighting
@@ -162,10 +184,10 @@ row_labels <- c(
   "2-4",
   ">4",
   "Region (%)",
-  "Örebro/Uppsala", 
+  "Örebro/Uppsala",
   "Other regions",
   "Södra",
-  "Stockholm",  
+  "Stockholm",
   "Västra",
   "Clinic level (%)",
   "Local",
@@ -179,7 +201,7 @@ row_labels <- c(
   "eGFR in categories (%)",
   "<10",
   "10-14",
-  "15-20", 
+  "15-20",
   "SBP (mmHg) [mean, SD]",
   "SBP in categories (%)",
   "<120",
@@ -257,7 +279,7 @@ table_full_elig <- create_baseline_table(
 )$raw_table
 
 elig_cohort$sw_IPSW <- 1
-elig_cohort[elig_cohort$S==1, "sw_IPSW"] <- baseline$sw_IPSW
+elig_cohort[elig_cohort$S == 1, "sw_IPSW"] <- baseline$sw_IPSW
 table_full_elig_IPSW <- create_baseline_table(
   data = elig_cohort,
   id_name = "LOPNR",
@@ -274,14 +296,14 @@ table_full_elig_IPSW <- create_baseline_table(
 
 # Create baseline table without weighting and with the four methods of weighting
 for (w_meth in w_meths) {
-  if (w_meth == "") {
+  if (w_meth == "unweighted") {
     weights_meth <- NULL
   } else {
     weights_meth <- baseline[[paste0("sw_", w_meth)]]
   }
   
   # create main descriptives table
-  if (w_meth=="" | w_meth=="IPTW"){
+  if (w_meth == "unweighted" | w_meth == "IPTW") {
     table_one <- create_baseline_table(
       data = baseline,
       id_name = "LOPNR",
@@ -289,8 +311,7 @@ for (w_meth in w_meths) {
       vars = listvar_main,
       categoricalVars = catvar,
       IQRVars = non_normal_vars,
-      treatmentColumn = "trt",
-      # Column in dataframe with trt assignment
+      treatmentColumn = trt_var,
       treatmentLabel = treatment_label,
       controlLabel = control_label,
       tableCaption = paste(
@@ -307,7 +328,7 @@ for (w_meth in w_meths) {
       file = paste0(
         results_path,
         "Main/Descriptives_",
-        ifelse(w_meth == "", "no_weighting", paste0("weighting_", w_meth)),
+        ifelse(w_meth == "unweighted", "no_weighting", paste0("weighting_", w_meth)),
         ".xlsx"
       )
     )
@@ -322,8 +343,7 @@ for (w_meth in w_meths) {
       vars = listvar,
       categoricalVars = catvar,
       IQRVars = non_normal_vars,
-      treatmentColumn = "trt",
-      # Column in dataframe with trt assignment
+      treatmentColumn = trt_var,
       treatmentLabel = treatment_label,
       controlLabel = control_label,
       tableCaption = paste(
@@ -341,10 +361,18 @@ for (w_meth in w_meths) {
       rowNames = TRUE,
       file = paste0(
         results_path,
-        ifelse(w_meth == "" |
-                 w_meth == "IPTW", "Supplemental", "Other"),
+        ifelse(
+          w_meth == "unweighted" |
+            w_meth == "IPTW",
+          "Supplemental",
+          "Other"
+        ),
         "/Descriptives_",
-        ifelse(w_meth == "", "no_weighting", paste0("weighting_", w_meth)),
+        ifelse(
+          w_meth == "unweighted",
+          "no_weighting",
+          paste0("weighting_", w_meth)
+        ),
         ".xlsx"
       )
     )
@@ -420,14 +448,13 @@ varnames <- c(
 )
 
 # combine in dt
-SMDs_dt <- cbind(SMD_, SMD_IPTW)
+SMDs_dt <- cbind(SMD_unweighted, SMD_IPTW)
 rownames(SMDs_dt) <- varnames
 SMDs_dt <- SMDs_dt[order(SMDs_dt[, "SMD_IPTW"], decreasing = TRUE), ]
 ggplot2::ggsave(
   plot = love_plot(
     SMDs_dt = SMDs_dt,
-    SMD_names = c("SMD_", "SMD_IPTW"),
-    plot_title = "Before and after IPTW",
+    SMD_names = c("SMD_unweighted", "SMD_IPTW"),
     plotColors = manual_colors,
     xmax = 1
   ),
@@ -441,30 +468,30 @@ ggplot2::ggsave(
 # calculate SMD for those with a treatment decision versus all eligible patients
 ################################################################################
 # encode factors
-elig_cohort_num <- encode_factors(dt = elig_cohort,
-                                  catvar = catvar,
-                                  contvar = contvar,
-                                  expand = FALSE)
+elig_cohort_num <- encode_factors(
+  dt = elig_cohort,
+  catvar = catvar,
+  contvar = contvar,
+  expand = FALSE
+)
 means_all <- colMeans(elig_cohort_num[, ..listvar])
 sd_all <- apply(elig_cohort_num[, ..listvar], 2, sd)
 
 # encode factors
-baseline_num <- encode_factors(dt = baseline,
-                               catvar = c(catvar, "trt"),
-                               contvar = contvar,
-                               expand = FALSE)
+baseline_num <- encode_factors(
+  dt = baseline,
+  catvar = c(catvar, trt_var),
+  contvar = contvar,
+  expand = FALSE
+)
 means <- colMeans(baseline_num[, ..listvar])
-means_treated <- colMeans(baseline_num[trt==1, ..listvar])
-means_untreated <- colMeans(baseline_num[trt==0, ..listvar])
-wmeans <- apply(baseline_num[, ..listvar], 2, 
-                weighted.mean, 
-                w = as.numeric(baseline[, "sw_IPSW"][[1]]))
-wmeans_treated <- apply(baseline_num[trt==1, ..listvar], 2, 
-                        weighted.mean, 
-                        w = as.numeric(baseline[trt==1, "sw_IPSW"][[1]]))
-wmeans_untreated <- apply(baseline_num[trt==0, ..listvar], 2, 
-                          weighted.mean, 
-                          w = as.numeric(baseline[trt==0, "sw_IPSW"][[1]]))
+means_treated <- colMeans(baseline_num[trt == 1, ..listvar])
+means_untreated <- colMeans(baseline_num[trt == 0, ..listvar])
+wmeans <- apply(baseline_num[, ..listvar], 2, weighted.mean, w = as.numeric(baseline[, "sw_IPSW"][[1]]))
+wmeans_treated <- apply(baseline_num[trt == 1, ..listvar], 2, weighted.mean, w = as.numeric(baseline[trt ==
+                                                                                                       1, "sw_IPSW"][[1]]))
+wmeans_untreated <- apply(baseline_num[trt == 0, ..listvar], 2, weighted.mean, w = as.numeric(baseline[trt ==
+                                                                                                         0, "sw_IPSW"][[1]]))
 
 # balance before weighting
 SMD_elig <- abs(means - means_all) / sd_all
@@ -477,20 +504,26 @@ SMD_elig_treated_wt <- abs(wmeans_treated - means_all) / sd_all
 SMD_elig_untreated_wt <- abs(wmeans_untreated - means_all) / sd_all
 
 # save table
-SMD_eligs_dt <- data.frame(SMD_elig = SMD_elig,
-                           untreated_unweighted = SMD_elig_untreated,
-                           treated_unweighted = SMD_elig_treated,
-                           SMD_elig_IPSW = SMD_elig_wt,
-                           untreated_weighted = SMD_elig_untreated_wt,
-                           treated_weighted = SMD_elig_treated_wt)
-row_names_without_levels <- row_labels[-c(1, 4:7, 11:13, 15:19, 21:23, 25:27, 
-                                          30:32, 35:38, 41:44, 50:52, 86:88)]
+SMD_eligs_dt <- data.frame(
+  SMD_elig = SMD_elig,
+  untreated_unweighted = SMD_elig_untreated,
+  treated_unweighted = SMD_elig_treated,
+  SMD_elig_IPSW = SMD_elig_wt,
+  untreated_weighted = SMD_elig_untreated_wt,
+  treated_weighted = SMD_elig_treated_wt
+)
+row_names_without_levels <- row_labels[-c(1,
+                                          4:7,
+                                          11:13,
+                                          15:19,
+                                          21:23,
+                                          25:27,
+                                          30:32,
+                                          35:38,
+                                          41:44,
+                                          50:52,
+                                          86:88)]
 rownames(SMD_eligs_dt) <- varnames
-# openxlsx::write.xlsx(
-#   SMD_eligs_dt,
-#   rowNames = TRUE,
-#   file = paste0(results_path, "Supplemental/SMD_elig.xlsx")
-# )
 
 # save plot
 SMD_eligs_dt <- SMD_eligs_dt[order(SMD_eligs_dt$SMD_elig_IPSW, decreasing = TRUE), ]
@@ -498,7 +531,6 @@ ggplot2::ggsave(
   plot = love_plot(
     SMDs_dt = SMD_eligs_dt,
     SMD_names = c("SMD_elig", "SMD_elig_IPSW"),
-    plot_title = "Before and after IPSW",
     plotColors = manual_colors[1:2],
     xlab_title = "Target absolute standardized mean difference",
     xmax = 1
@@ -537,32 +569,15 @@ openxlsx::write.xlsx(
 time_to_dia_dt$krt_startdate
 table(time_to_dia_dt$krt_modality)
 trans_dt <- merged_ckd[LOPNR %in% baseline$LOPNR &
-             krt_modality=="TX" &
-             !is.na(krt_startdate),
-           .(LOPNR, krt_startdate, krt_modality)
-           ][,
-             unique(.SD)
-             ]
-baseline_TX <- merge(baseline,
-                     trans_dt,
-                     all.x = TRUE,
-                     by = id_name)
-baseline_TX[, 
-            time_until_TX := krt_startdate - visit_date
-]
-
-# check
-# baseline_TX[baseline_TX$time_until_TX<0,]
-# baseline_TX[baseline_TX$time_until_TX>0 & baseline_TX$time_until_TX< 2 * 365.25, 
-#             c(id_name, "trt", "visit_date", "krt_startdate", "krt_modality", "time_until_TX"),
-#             with = FALSE]
-# baseline_TX[baseline_TX$time_until_TX>0 & baseline_TX$time_until_TX< 4 * 365.25, 
-#             c(id_name, "trt", "visit_date", "krt_startdate", "krt_modality", "time_until_TX"),
-#             with = FALSE]
+                         krt_modality == "TX" &
+                         !is.na(krt_startdate), .(LOPNR, krt_startdate, krt_modality)][, unique(.SD)]
+baseline_TX <- merge(baseline, trans_dt, all.x = TRUE, by = id_name)
+baseline_TX[, time_until_TX := krt_startdate - visit_date]
 
 cat(" Number of transplantations in two years after dialysis decision:",
-    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 & 
-                              baseline_TX$time_until_TX < 2*365, "LOPNR"])), "\n")
+    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
+                              baseline_TX$time_until_TX < 2 * 365, "LOPNR"])),
+    "\n")
 
 ################################################################################
 ### Summarize number of decisions
@@ -571,78 +586,76 @@ cat(" Number of transplantations in two years after dialysis decision:",
 # 2. sort on decision date
 # 3. keep only modality changes
 
-# two decisions
-two_decisions_dt <- merged_ckd[
-  LOPNR %in% baseline$LOPNR &
-    !is.na(decision_date1) & 
-    !is.na(decision_date2) &
-    !is.na(decision_modality1) &
-    !is.na(decision_modality2),
-  .(LOPNR, decision_date1, decision_date2,
-    decision_modality1, decision_modality2)
-][,
-  # keep unique rows
-  unique(.SD)
-][
-  # ensure ordered by date within patient
-  order(LOPNR, decision_date1)
-][
-  # keep only if second decision is within 2 years of first
-  decision_date2 <= decision_date1 + lubridate::years(2)
-][, `:=`
-  (decision_modality1_new = fifelse(decision_modality1=="Konservativ behandling", 0, 1),
-    decision_modality2_new = fifelse(decision_modality2=="Konservativ behandling", 0, 1))
-][
-  # keep only if modality changes
-  decision_modality1_new != decision_modality2_new
-]
+# extract those with two decisions
+# 1. extract relevant variables
+two_decisions_dt <- merged_ckd[LOPNR %in% baseline$LOPNR &
+                                 !is.na(decision_date1) &
+                                 !is.na(decision_date2) &
+                                 !is.na(decision_modality1) &
+                                 !is.na(decision_modality2), .(LOPNR,
+                                                               decision_date1,
+                                                               decision_date2,
+                                                               decision_modality1,
+                                                               decision_modality2)]
+# 2. keep unique rows and ensure ordered by date within patient
+two_decisions_dt <- two_decisions_dt[, unique(.SD)][order(LOPNR, decision_date1)]
+# 3. keep only if second decision is within 2 years of first
+two_decisions_dt <- two_decisions_dt[decision_date2 <= decision_date1 + lubridate::years(2)]
+# 4. keep only if modality changes
+two_decisions_dt <- two_decisions_dt[, `:=`
+                                     (
+                                       decision_modality1_new = fifelse(decision_modality1 == "Konservativ behandling", 0, 1),
+                                       decision_modality2_new = fifelse(decision_modality2 == "Konservativ behandling", 0, 1)
+                                     )][decision_modality1_new != decision_modality2_new]
 baseline[, n_decision_2 := fifelse(baseline$LOPNR %in% two_decisions_dt$LOPNR, 1, 0)]
 
 # three decisions
-three_decisions_dt <- merged_ckd[
-  LOPNR %in% baseline$LOPNR &
-    !is.na(decision_date1) & 
-    !is.na(decision_date2) &
-    !is.na(decision_date3) &
-    !is.na(decision_modality1) &
-    !is.na(decision_modality2) &
-    !is.na(decision_modality3),
-  .(LOPNR, decision_date1, decision_date2, decision_date3,
-    decision_modality1, decision_modality2, decision_modality3)
-][,
-  # keep unique rows
-  unique(.SD)
-][
-  # ensure ordered by date within patient
-  order(LOPNR, decision_date1)
-][
-  # keep only if second decision is within 2 years of first
-  decision_date2 <= decision_date1 + lubridate::years(2) &
-  decision_date3 <= decision_date1 + lubridate::years(2)
-][, `:=`
-  (decision_modality1_new = fifelse(decision_modality1=="Konservativ behandling", 0, 1),
-    decision_modality2_new = fifelse(decision_modality2=="Konservativ behandling", 0, 1),
-    decision_modality3_new = fifelse(decision_modality3=="Konservativ behandling", 0, 1))
-][
-  # keep only if modality changes
-  decision_modality1_new != decision_modality2_new & 
-    decision_modality2_new != decision_modality3_new
-]
+# 1. extract relevant variables
+three_decisions_dt <- merged_ckd[LOPNR %in% baseline$LOPNR &
+                                   !is.na(decision_date1) &
+                                   !is.na(decision_date2) &
+                                   !is.na(decision_date3) &
+                                   !is.na(decision_modality1) &
+                                   !is.na(decision_modality2) &
+                                   !is.na(decision_modality3), .(
+                                     LOPNR,
+                                     decision_date1,
+                                     decision_date2,
+                                     decision_date3,
+                                     decision_modality1,
+                                     decision_modality2,
+                                     decision_modality3
+                                   )]
+# 2. keep unique rows and ensure ordered by date within patient
+three_decisions_dt <- three_decisions_dt[, unique(.SD)][order(LOPNR, decision_date1)]
+# 3. keep only if second decision is within 2 years of first
+three_decisions_dt <- three_decisions_dt[decision_date2 <= decision_date1 + lubridate::years(2) &
+                                           decision_date3 <= decision_date1 + lubridate::years(2)]
+# 4. keep only if modality changes
+three_decisions_dt <- three_decisions_dt[, `:=`
+                                         (
+                                           decision_modality1_new = fifelse(decision_modality1 == "Konservativ behandling", 0, 1),
+                                           decision_modality2_new = fifelse(decision_modality2 == "Konservativ behandling", 0, 1),
+                                           decision_modality3_new = fifelse(decision_modality3 == "Konservativ behandling", 0, 1)
+                                         )][decision_modality1_new != decision_modality2_new &
+                                              decision_modality2_new != decision_modality3_new]
 baseline[, n_decision_3 := fifelse(baseline$LOPNR %in% three_decisions_dt$LOPNR, 1, 0)]
-three_decisions_dt[LOPNR==176579584 | LOPNR==495890215,
-                   .(LOPNR, decision_date1, decision_modality1,
-                                       decision_date2, decision_modality2,
-                                       decision_date3, decision_modality3)]
+three_decisions_dt[LOPNR == 176579584 | LOPNR == 495890215, .(
+  LOPNR,
+  decision_date1,
+  decision_modality1,
+  decision_date2,
+  decision_modality2,
+  decision_date3,
+  decision_modality3
+)]
 
 # Generate the summary table
 ndec <- summarize_binary_vars(
   baseline,
-  group_var = "trt",
+  group_var = trt_var,
   vars = c("n_decision_2", "n_decision_3"),
-  labels = c(
-    "Two treatment switches",
-    "Three treatment switches"
-  )
+  labels = c("Two treatment switches", "Three treatment switches")
 )
 
 # Rename columns for readability
@@ -650,9 +663,11 @@ names(ndec) <- c("Variable", "Overall", "Dialysis", "Conservative Care")
 print(ndec)
 
 # save table
-openxlsx::write.xlsx(ndec,
-                     rowNames = FALSE,
-                     file = paste0(results_path, "Main/Number_of_decisions.xlsx"))
+openxlsx::write.xlsx(
+  ndec,
+  rowNames = FALSE,
+  file = paste0(results_path, "Main/Number_of_decisions.xlsx")
+)
 
 # save cohort
 save(
@@ -666,12 +681,11 @@ save(
   control_label,
   baseline,
   model_PS,
-  model_S, 
+  model_S,
   coef_PS_overall,
   elig_cohort,
   w_meths,
+  trt_var,
   manual_colors,
-  file = file.path(
-    "Data/cohort_with_weights.Rdata"
-  )
+  file = file.path("Data/cohort_with_weights.Rdata")
 )

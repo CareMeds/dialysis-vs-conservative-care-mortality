@@ -44,7 +44,7 @@ rm(baseline)
 ################################################################################
 ### Sensitivity anaysis for non-positivity, investigate non-overlapping region of PS
 ################################################################################
-trim_meths <- c("", "IPTW", "overlap", "Crump", "Stürmer", "Walker")
+trim_meths <- c("unweighted", "IPTW", "overlap", "Crump", "Stürmer", "Walker")
 
 # Initialize summary table
 summary_table <- data.frame(
@@ -69,54 +69,52 @@ for (trim_meth in trim_meths) {
   cat("Trimming method:", trim_meth, "\n")
   # Use untrimmed data for common_range, IPTW, and overlap methods
   if (trim_meth %in% c("Crump", "Stürmer", "Walker")) {
-    # Apply trimming method to remove extreme PS values
-    baseline_trimmed <- trim_propensity_scores(
+    # Apply trimming and reweight IPTW
+    baseline_updated <- trim_propensity_scores(
       data = baseline_untrimmed,
-      PS_varname = "ps",
-      trt_varname = "trt",
+      trt_var = trt_var,
+      w_meth = "IPTW",
+      model_PS = model_PS,
+      catvar = catvar,
+      contvar = contvar,
       trim_meth = trim_meth
-    )$overlap
+    )$overlap$data
   } else{
-    baseline_trimmed <- baseline_untrimmed
+    baseline_updated <- baseline_untrimmed
   }
   
-  # Identify non-overlap patients
+  # Identify non-overlap patients even after trimming
   nonoverlap <- trim_propensity_scores(
-    data = baseline_trimmed,
-    PS_varname = "ps",
-    trt_varname = "trt",
+    data = baseline_updated,
+    trt_var = trt_var,
+    w_meth = "unweighted",
+    model_PS = model_PS,
+    catvar = catvar,
+    contvar = contvar,
     trim_meth = "common_range"
   )$nonoverlap
   
-  # extract weights
-  if (trim_meth == "") {
+  # define sample and weights
+  if (trim_meth == "unweighted") {
     # extract weights
-    weights_meth <- NULL
+    weights_meth <- rep(1, nrow(baseline_updated))
     
     # use untrimmed sample
     baseline <- copy(baseline_untrimmed)
-    
   } else if (trim_meth == "IPTW" | trim_meth == "overlap") {
     # extract weights
     weights_meth <- baseline_untrimmed[[paste0("sw_", trim_meth)]]
     
     # use untrimmed sample
     baseline <- copy(baseline_untrimmed)
-    
-  } else if (trim_meth %in% c("Crump", "Stürmer", "Walker")) {
-    # re-estimate PS in the trimmed population
-    baseline_reestimated <- create_weights(
-      data = baseline_trimmed,
-      model_PS = model_PS,
-      w_meth = "IPTW",
-      verbose = FALSE
-    )$data
-    
-    # extract weights
-    weights_meth <- baseline_reestimated$w
+  } else if (trim_meth == "Crump" |
+             trim_meth == "Stürmer" |
+             trim_meth == "Walker") {
+    # extract re-estimated weights
+    weights_meth <- baseline_updated$w
     
     # use trimmed and re-estimated PS
-    baseline <- copy(baseline_reestimated)
+    baseline <- copy(baseline_updated)
   }
   
   # create baseline table of non overlap
@@ -127,7 +125,7 @@ for (trim_meth in trim_meths) {
     vars = listvar,
     categoricalVars = catvar,
     IQRVars = non_normal_vars,
-    treatmentColumn = "trt",
+    treatmentColumn = trt_var,
     treatmentLabel = treatment_label,
     controlLabel = control_label,
     tableCaption = ""
@@ -137,19 +135,19 @@ for (trim_meth in trim_meths) {
   unweighted_fig_ps <- create_ps_distribution_plot(
     data = baseline,
     PS_varname = "ps",
-    trt_varname = "trt",
+    trt_varname = trt_var,
     PS_title_hist = trim_meth,
     PS_title_scaled_hist = trim_meth,
     xlab = ifelse(trim_meth == tail(trim_meths, 1), TRUE, FALSE),
     ylab = TRUE,
     palette = manual_colors[1:2]
   )
-  assign(paste0("unweighted_fig_ps_", trim_meth), unweighted_fig_ps)
+  assign(paste0("fig_unweighted_ps_", trim_meth), unweighted_fig_ps)
   
   weighted_fig_ps <- create_ps_distribution_plot(
     data = baseline,
     PS_varname = "ps",
-    trt_varname = "trt",
+    trt_varname = trt_var,
     weights = weights_meth,
     PS_title_hist = trim_meth,
     PS_title_scaled_hist = trim_meth,
@@ -157,27 +155,36 @@ for (trim_meth in trim_meths) {
     ylab = TRUE,
     palette = manual_colors[1:2]
   )
-  assign(paste0("weighted_fig_ps_", trim_meth), weighted_fig_ps)
+  assign(paste0("fig_weighted_ps_", trim_meth), weighted_fig_ps)
   
-  # obtain KM, no weighting
-  out_KM <- create_KM_plot(
+  # compute estimates
+  out_est <- compute_estimates_with_CI(
     data = baseline,
-    horizon = horizon,
     unit = unit,
+    horizon = horizon,
     model_PS = model_PS,
+    event_var = outcome_var,
+    competing_event_var = competing_events_var,
+    time2event_var = time2outcome_var,
+    trt_var = trt_var,
     w_meth = ifelse(
-      trim_meth == "",
-      "",
-      ifelse(trim_meth == "overlap", trim_meth, "IPTW")
+      trim_meth == "Crump" |
+        trim_meth == "Stürmer" |
+        trim_meth == "Walker",
+      "IPTW",
+      trim_meth
     ),
-    weights_meth = weights_meth,
-    event_var = outcome_vars[2],
-    time2event_var = time2outcome_vars[2],
-    trt_var = "trt",
-    competing_event_var = competing_events_vars[2],
+    trim_meth = ifelse(
+      trim_meth == "Crump" |
+        trim_meth == "Stürmer" |
+        trim_meth == "Walker",
+      trim_meth,
+      "no_trimming"
+    ),
+    catvar = catvar,
+    contvar = contvar,
     n_bootstraps = n_bootstraps,
-    bootstrap_seed = 1,
-    plotColors = manual_colors[1:2]
+    bootstrap_seed = 1
   )
   
   # Append summary statistics for current trimming method
@@ -189,15 +196,15 @@ for (trim_meth in trim_meths) {
       Excluded = nrow(baseline_untrimmed) - nrow(baseline),
       Nonoverlap = nrow(nonoverlap),
       Imbalance = sum(table_one$smd_table > 0.1),
-      RD = out_KM$RD * 100,
-      RD_lower = out_KM$RD_lower * 100,
-      RD_upper = out_KM$RD_upper * 100,
-      dRMST = out_KM$dRMST,
-      dRMST_lower = out_KM$dRMST_lower,
-      dRMST_upper = out_KM$dRMST_upper,
-      HR = out_KM$HR,
-      HR_lower = out_KM$HR_lower,
-      HR_upper = out_KM$HR_upper
+      RD = out_est$RD * 100,
+      RD_lower = out_est$RD_lower * 100,
+      RD_upper = out_est$RD_upper * 100,
+      dRMST = out_est$dRMST,
+      dRMST_lower = out_est$dRMST_lower,
+      dRMST_upper = out_est$dRMST_upper,
+      HR = out_est$HR,
+      HR_lower = out_est$HR_lower,
+      HR_upper = out_est$HR_upper
     )
   )
 }
@@ -206,8 +213,8 @@ for (trim_meth in trim_meths) {
 ### Combine histograms and scaled histograms of propensity score distributions
 ### across different trimming methods
 ################################################################################
-# Define the layout: 
-# Each letter represents a plot area. 
+# Define the layout:
+# Each letter represents a plot area.
 # # represents an empty space.
 # We define a 4-column grid.
 layout_design <- "
@@ -221,42 +228,42 @@ layout_design <- "
 # Combine the plots into a list to pass to wrap_plots
 plot_list <- list(
   # Row 1
-  unweighted_fig_ps_$hist + ggplot2::labs(title = "1A. Total population"),
-  unweighted_fig_ps_$scaled_hist + ggplot2::labs(title = "1B. Total population"),
-  weighted_fig_ps_IPTW$hist + ggplot2::labs(title = "2A. IPTW"),
-  weighted_fig_ps_IPTW$scaled_hist + ggplot2::labs(title = "2B. IPTW"),
+  fig_unweighted_ps_unweighted$hist + ggplot2::labs(title = "1A. Total population"),
+  fig_unweighted_ps_unweighted$scaled_hist + ggplot2::labs(title = "1B. Total population"),
+  fig_weighted_ps_IPTW$hist + ggplot2::labs(title = "2A. IPTW"),
+  fig_weighted_ps_IPTW$scaled_hist + ggplot2::labs(title = "2B. IPTW"),
   
   # Row 2 (Starts at column 3 based on design ##EF)
-  weighted_fig_ps_overlap$hist + ggplot2::labs(title = "3A. Overlap weighting"),
-  weighted_fig_ps_overlap$scaled_hist + ggplot2::labs(title = "3B. Overlap weighting"),
+  fig_weighted_ps_overlap$hist + ggplot2::labs(title = "3A. Overlap weighting"),
+  fig_weighted_ps_overlap$scaled_hist + ggplot2::labs(title = "3B. Overlap weighting"),
   
   # Row 3
-  unweighted_fig_ps_Crump$hist + ggplot2::labs(title = "4A. Crump trimming"),
-  unweighted_fig_ps_Crump$scaled_hist + ggplot2::labs(title = "4B. Crump trimming"),
-  weighted_fig_ps_Crump$hist + ggplot2::labs(title = "5A. Crump trimming"),
-  weighted_fig_ps_Crump$scaled_hist + ggplot2::labs(title = "5B. Crump trimming"),
+  fig_unweighted_ps_Crump$hist + ggplot2::labs(title = "4A. Crump trimming"),
+  fig_unweighted_ps_Crump$scaled_hist + ggplot2::labs(title = "4B. Crump trimming"),
+  fig_weighted_ps_Crump$hist + ggplot2::labs(title = "5A. Crump trimming"),
+  fig_weighted_ps_Crump$scaled_hist + ggplot2::labs(title = "5B. Crump trimming"),
   
   # Row 4
-  unweighted_fig_ps_Stürmer$hist + ggplot2::labs(title = "6A. Stürmer trimming"),
-  unweighted_fig_ps_Stürmer$scaled_hist + ggplot2::labs(title = "6B. Stürmer trimming"),
-  weighted_fig_ps_Stürmer$hist + ggplot2::labs(title = "7A. Stürmer trimming"),
-  weighted_fig_ps_Stürmer$scaled_hist + ggplot2::labs(title = "7B. Stürmer trimming"),
+  fig_unweighted_ps_Stürmer$hist + ggplot2::labs(title = "6A. Stürmer trimming"),
+  fig_unweighted_ps_Stürmer$scaled_hist + ggplot2::labs(title = "6B. Stürmer trimming"),
+  fig_weighted_ps_Stürmer$hist + ggplot2::labs(title = "7A. Stürmer trimming"),
+  fig_weighted_ps_Stürmer$scaled_hist + ggplot2::labs(title = "7B. Stürmer trimming"),
   
   # Row 5
-  unweighted_fig_ps_Walker$hist + ggplot2::labs(title = "8A. Walker trimming"),
-  unweighted_fig_ps_Walker$scaled_hist + ggplot2::labs(title = "8B. Walker trimming"),
-  weighted_fig_ps_Walker$hist + ggplot2::labs(title = "9A. Walker trimming"),
-  weighted_fig_ps_Walker$scaled_hist + ggplot2::labs(title = "9B. Walker trimming")
+  fig_unweighted_ps_Walker$hist + ggplot2::labs(title = "8A. Walker trimming"),
+  fig_unweighted_ps_Walker$scaled_hist + ggplot2::labs(title = "8B. Walker trimming"),
+  fig_weighted_ps_Walker$hist + ggplot2::labs(title = "9A. Walker trimming"),
+  fig_weighted_ps_Walker$scaled_hist + ggplot2::labs(title = "9B. Walker trimming")
 )
 
 # Generate final plot
-final_plot <- patchwork::wrap_plots(plot_list, design = layout_design) + 
+final_plot <- patchwork::wrap_plots(plot_list, design = layout_design) +
   patchwork::plot_layout(guides = "collect")
 
 # Save
 ggplot2::ggsave(
   plot = final_plot,
-  filename = paste0(results_path, "Supplemental/Figure_S7.png"),
+  filename = paste0(results_path, "Supplemental/Figure_S6.png"),
   width = 20,
   height = 20,
   dpi = 300
@@ -275,7 +282,7 @@ nonoverlap_forest <- create_forest_plot_all_measures(dt = setDT(summary_table),
                                                      print_metrics = c("N", "Nonoverlap"))
 ggplot2::ggsave(
   plot = nonoverlap_forest$combined_plot,
-  filename = paste0(results_path, "Supplemental/Figure_S8.png"),
+  filename = paste0(results_path, "Supplemental/Figure_S7.png"),
   width = 11,
   height = 8,
   dpi = 300

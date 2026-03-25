@@ -9,7 +9,9 @@ knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Proje
 set.seed(1)
 
 # set directory
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
+setwd(
+  "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
+)
 results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
 # load libraries
@@ -137,17 +139,17 @@ contvar <- c(
   "hb",
   "n_hospital",
   "n_cvd_hospital"
-  )
+)
 catvar <- listvar[!listvar %in% contvar]
 
 # define labels
 treatment_label <- "Dialysis"
 control_label <- "Conservative care"
-non_normal_vars <- c("age", 
+non_normal_vars <- c("age",
                      "Davies_score",
                      "egfr2021",
                      "n_hospital",
-                     "n_cvd_hospital") # Nonnormally distributed
+                     "n_cvd_hospital")
 
 ################################################################################
 ### Propensity score model #####################################################
@@ -202,7 +204,8 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
   iron_cat +
   clinic_level +
   region +
-  vasodilator:rms::pol(age, 2)
+  vasodilator:rms::pol(age, 2) +  
+  aki:rms::pol(egfr2021, 2)
 
 # Create IPTW weights on full cohort
 out_weights <- create_weights(
@@ -217,6 +220,7 @@ baseline <- out_weights$data
 
 # check if SMDs after weighting below 0.1
 id_name <- "LOPNR"
+trt_var <- "trt"
 table_one <- create_baseline_table(
   data = baseline,
   id_name = id_name,
@@ -224,12 +228,13 @@ table_one <- create_baseline_table(
   vars = listvar,
   categoricalVars = catvar,
   IQRVars = non_normal_vars,
-  treatmentColumn = "trt",
+  treatmentColumn = trt_var,
   treatmentLabel = treatment_label,
   controlLabel = control_label,
   tableCaption = ""
 )
-cat("Number of SMDs > 0.1:", table_one$smd_table[which(table_one$smd_table>0.1)], "\n")
+cat("Number of SMDs > 0.1: \n")
+print(table_one$smd_table[which(table_one$smd_table > 0.1)])
 
 # save coefficients of PS model
 coef_PS_overall <- out_weights$coef_ps
@@ -320,7 +325,9 @@ rownames(PS_df) <- c(
   "Stockholm versus Örebro/Uppsala",
   "Västra versus Örebro/Uppsala",
   "Age * vasodilator",
-  "Age^2 * vasodoliator"
+  "Age^2 * vasodoliator",
+  "eGFR * Acute kidney injury",
+  "eGFR^2 * Acute kidney injury"
 )
 colnames(PS_df) <- c("Coefficients (95% CI)", "HR (95% CI)")
 openxlsx::write.xlsx(
@@ -352,30 +359,26 @@ pROC::auc(pROC::roc(
 # 4) Fine stratification weights (ATT)
 # 5) Overlap weighting
 # 6) IPTW and probability of belonging to eligibility cohort (generalizability)
-w_meths <- c("", "IPTW", "overlap", "IPSW", "IPSW_IPTW", "SMR_ATT", "SMR_ATU")
-model_S <- update(model_PS, S ~ . -rms::pol(age, 2):vasodilator)
-for (w_meth in w_meths) {
-  # create weights
-  if (w_meth != "") {
-    out_weights <- create_weights(
-      data = baseline,
-      elig_cohort = elig_cohort,
-      model_PS = model_PS,
-      model_S = model_S,
-      w_meth = w_meth,
-      catvar = catvar,
-      contvar = contvar,
-      verbose = FALSE
-    )
-    baseline[[paste0("sw_", w_meth)]] <- as.numeric(out_weights$data$w)
-  }
-  
-  # set weights for each method
-  if (w_meth == "") {
-    weights_meth <- NULL
-  } else {
-    weights_meth <- baseline[[paste0("sw_", w_meth)]]
-  }
+w_meths <- c("unweighted",
+             "IPTW",
+             "overlap",
+             "IPSW",
+             "IPSW_IPTW",
+             "SMR_ATT",
+             "SMR_ATU")
+model_S <- update(model_PS, S ~ . - rms::pol(age, 2):vasodilator)
+for (w_meth in w_meths[-1]) {
+  out_weights <- create_weights(
+    data = baseline,
+    elig_cohort = elig_cohort,
+    model_PS = model_PS,
+    model_S = model_S,
+    w_meth = w_meth,
+    catvar = catvar,
+    contvar = contvar,
+    verbose = FALSE
+  )
+  baseline[[paste0("sw_", w_meth)]] <- as.numeric(out_weights$data$w)
 }
 
 # Summarize statistics on weights across methods
@@ -414,11 +417,10 @@ save(
   control_label,
   baseline,
   model_PS,
-  model_S, 
+  model_S,
   coef_PS_overall,
   elig_cohort,
   w_meths,
-  file = file.path(
-    "Data/cohort_with_weights.Rdata"
-  )
+  trt_var,
+  file = file.path("Data/cohort_with_weights.Rdata")
 )

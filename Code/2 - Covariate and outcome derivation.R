@@ -4,10 +4,12 @@
 ################################################################################
 
 # remove history
-# rm(list = ls(all.names = TRUE))
+rm(list = ls(all.names = TRUE))
 
 # load data
-setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
+setwd(
+  "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
+)
 load("Data/new_cohort.Rdata")
 load("Data/merged_ckd.Rdata")
 load("Data/cleaned/snr_inpatient.Rdata")
@@ -26,7 +28,7 @@ library(data.table)
 # convert inpatient
 inpatient <- UT_R_PAR_SV_123160_2023
 setDT(inpatient)
-inpatient[, INDATUMA := as.IDate(as.character(INDATUMA), format="%Y%m%d")]
+inpatient[, INDATUMA := as.IDate(as.character(INDATUMA), format = "%Y%m%d")]
 
 # convert inpatient
 outpatient <- UT_R_PAR_OV_123160_2023
@@ -35,7 +37,7 @@ setDT(outpatient)
 # convert lmed
 lmed <- UT_R_LMED_123160_2023
 setDT(lmed)
-lmed[, EDATUM := as.IDate(EDATUM, format="%Y%m%d")]
+lmed[, EDATUM := as.IDate(EDATUM, format = "%Y%m%d")]
 
 # ID name
 id_name <- "LOPNR"
@@ -44,6 +46,7 @@ id_name <- "LOPNR"
 ### Add covariates to eligible cohort without treatment decision and analysis cohort
 ################################################################################
 for (cohort_name in c("cohort", "elig_cohort")) {
+  cat("Working on", cohort_name, "\n")
   # evaluate for correct cohort
   cohort <- eval(parse(text = cohort_name))
   
@@ -69,15 +72,20 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     inpatient_dt = UT_R_PAR_SV_123160_2023,
     outpatient_dt = UT_R_PAR_OV_123160_2023,
     lopnr_obtain_diag = unique(cohort$LOPNR),
-    comorbidities = other_comorb
+    comorbidities = other_comorb,
+    max_date_dict = data.table(LOPNR = unique(cohort$LOPNR), max_date = end_date)
   )
+  if (cohort_name == "cohort") {
+    save(in_out_dict, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Data/other_comorb.Rdata")
+  }
   
   # merge with cohort
-  # TODO: do I really need merge or can I only use retrieve_past_info
-  cohort_other_comorb <- merge(cohort,
-                               in_out_dict$diagnoses_dt,
-                               by = c(id_name, "visit_date"),
-                               all.x = TRUE)
+  cohort_other_comorb <- merge(
+    cohort,
+    in_out_dict$diagnoses_dt,
+    by = c(id_name, "visit_date"),
+    all.x = TRUE
+  )
   
   # retrieve past info infinitely after merging with cohort
   for (comorbidity in other_comorb) {
@@ -87,8 +95,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       id_name = id_name,
       date_name = "visit_date",
       var_name = comorbidity,
-      max_roll_days = Inf,
-      setNA = TRUE # set remaining NA to zero
+      lookback_months = Inf,
+      fill_with_zero = TRUE # set remaining NA to zero
     )
   }
   
@@ -96,28 +104,20 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   ### Hospitalizations in past year
   ################################################################################
   # obtain inpatient info, only relevant patients
-  dia_dt <- inpatient[LOPNR %in% cohort$LOPNR,
-                      .SD[1], 
-                      by = c(id_name,
-                             "INDATUMA")][,
-                                          c(id_name, "INDATUMA", "HDIA"),
-                                          with = FALSE]
+  dia_dt <- inpatient[LOPNR %in% cohort$LOPNR, .SD[1], by = c(id_name, "INDATUMA")][, c(id_name, "INDATUMA", "HDIA"), with = FALSE]
   
   # calculate the number of hospitalizations in past year (any + cardiovascular)
-  hospital <- dia_dt[
-    cohort[, c(id_name, "visit_date"), with = FALSE], 
-    on = id_name, 
-    allow.cartesian = TRUE
-  ][
-    !is.na(INDATUMA) &
-      INDATUMA >= (visit_date - 365.25) & 
-      INDATUMA <= visit_date,
-    .(
-      n_hospital = .N,
-      n_cvd_hospital = sum(startsWith(HDIA, "I"), na.rm = TRUE)
-    ),
-    by = id_name
-  ]
+  # define start_date from which to look at hospitalizations by taking into account leap years properly
+  hospital <- dia_dt[cohort[, .(
+    id = get(id_name),
+    visit_date,
+    start_date = lubridate::add_with_rollback(
+      visit_date,
+      lubridate::period(-12, units = "months"),
+      roll_to_first = FALSE
+    )
+  )], on = .(LOPNR = id, INDATUMA >= start_date, INDATUMA <= visit_date), nomatch = NULL][, .(n_hospital = .N,
+                                                                                              n_cvd_hospital = sum(startsWith(HDIA, "I"), na.rm = TRUE)), by = .(LOPNR)]
   
   # merge with cohort
   cohort_hosp <- merge(cohort_other_comorb,
@@ -134,9 +134,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   ################################################################################
   ### Medications and iron based on ATC code
   ################################################################################
-  lmed_dict <- lmed[LOPNR %in% cohort$LOPNR,
-                    c(id_name, "EDATUM", "ATC"),
-                    with = FALSE][, unique(.SD)]
+  lmed_dict <- lmed[LOPNR %in% cohort$LOPNR, c(id_name, "EDATUM", "ATC"), with = FALSE][, unique(.SD)]
   
   # create medications data frames
   med_patterns <- list(
@@ -156,14 +154,19 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     iron_po      = "^B03AA|^B03AB|^B03AD|^B03AE",
     iron_iv      = "^B03AC"
   )
-
+  
   # extract medications
-  lmed_dt <- create_dummies(dt = lmed_dict,
-                            var_names = names(med_patterns),
-                            patterns = med_patterns,
-                            id_name = id_name, 
-                            col_name = "ATC",
-                            date_name = "EDATUM")
+  lmed_dt <- create_dummies(
+    dt = lmed_dict,
+    var_names = names(med_patterns),
+    patterns = med_patterns,
+    id_name = id_name,
+    col_name = "ATC",
+    date_name = "EDATUM"
+  )
+  if (cohort_name == "cohort") {
+    save(lmed_dt, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Data/lmed_dt.Rdata")
+  }
   
   # append to cohort
   cohort_med <- merge(cohort_hosp,
@@ -179,8 +182,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       id_name = id_name,
       date_name = "visit_date",
       var_name = medication,
-      max_roll_days = 365.25 / 2,
-      setNA = TRUE # set remaining NA to zero
+      lookback_months = 6,
+      fill_with_zero = TRUE # set remaining NA to zero
     )
   }
   
@@ -190,51 +193,39 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # extract iron
   esa_iron_ckd_dt <- merged_ckd[LOPNR %in% cohort$LOPNR &
                                   (!is.na(iron_med) |
-                                     !is.na(esa)),
-                                c(id_name,
-                                  "visit_date",
-                                  "esa",
-                                  "iron_med",
-                                  "iron_type"),
-                                with = FALSE][, unique(.SD)]
+                                     !is.na(esa)), c(id_name, "visit_date", "esa", "iron_med", "iron_type"), with = FALSE][, unique(.SD)]
   
   # iron from medications dt
-  esa_iron_med_dt <- cohort_med[!is.na(esa) | 
-                                  !is.na(iron_iv) | 
-                                  !is.na(iron_po), 
-                                c(id_name, 
-                                  "visit_date",
-                                  "esa",
-                                  "iron_iv",
-                                  "iron_po"),
-                                with = FALSE][, unique(.SD)]
+  esa_iron_med_dt <- cohort_med[!is.na(esa) |
+                                  !is.na(iron_iv) |
+                                  !is.na(iron_po), c(id_name, "visit_date", "esa", "iron_iv", "iron_po"), with = FALSE][, unique(.SD)]
   
   # combine iron_dt from CKD and medications data
-  esa_iron_dt <- merge(esa_iron_ckd_dt,
-                       esa_iron_med_dt,
-                       by = c(id_name,
-                              "visit_date"),
-                       all.x = TRUE)
+  esa_iron_dt <- merge(
+    esa_iron_ckd_dt,
+    esa_iron_med_dt,
+    by = c(id_name, "visit_date"),
+    all.x = TRUE
+  )
   esa_iron_dt[, `:=`
-              (esa = fifelse((!is.na(esa.x) & esa.x == 1) | 
-                               (!is.na(esa.y) & esa.y == 1), 1, 0),
-                iron_iv = fifelse(
-                  (!is.na(iron_type) & iron_type == "i.v.") |
-                    (!is.na(iron_iv) & iron_iv == 1), 1, 0),
-                iron_po = fifelse(
-                  (!is.na(iron_type) & iron_type == "p.o.") |
-                    (!is.na(iron_po) & iron_po == 1), 1, 0)
-                )]
-  esa_iron_dt <- esa_iron_dt[, c(id_name,
-                                 "visit_date",
-                                 "esa",
-                                 "iron_iv",
-                                 "iron_po"),
-                             with = FALSE]
+              (
+                esa = fifelse((!is.na(esa.x) & esa.x == 1) |
+                                (!is.na(esa.y) & esa.y == 1), 1, 0),
+                iron_iv = fifelse((!is.na(iron_type) &
+                                     iron_type == "i.v.") |
+                                    (!is.na(iron_iv) & iron_iv == 1), 1, 0),
+                iron_po = fifelse((!is.na(iron_type) &
+                                     iron_type == "p.o.") |
+                                    (!is.na(iron_po) & iron_po == 1), 1, 0)
+              )]
+  esa_iron_dt <- esa_iron_dt[, c(id_name, "visit_date", "esa", "iron_iv", "iron_po"), with = FALSE]
+  if (cohort_name == "cohort") {
+    save(esa_iron_dt, file = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Data/esa_iron_dt.Rdata")
+  }
   
   # add esa and iron to cohort by one year look back for iron
   cohort_esa_iron <- copy(cohort_med)
-  for (var_name in c("esa", "iron_iv", "iron_po")){
+  for (var_name in c("esa", "iron_iv", "iron_po")) {
     cohort_esa_iron[, (var_name) := NA_real_]
     cohort_esa_iron <- retrieve_past_info(
       dt = cohort_esa_iron,
@@ -242,8 +233,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       id_name = id_name,
       date_name = "visit_date",
       var_name = var_name,
-      max_roll_days = 365.25,
-      setNA = TRUE # set remaining NA to zero
+      lookback_months = 12,
+      fill_with_zero = TRUE # set remaining NA to zero
     )
   }
   
@@ -255,9 +246,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # 1 = Diabetesnefropati
   # 2 = Hyperoni
   # 3 = Other, i.e., Adult polycystisk njursjukdom, Glomerulonefrit, Pyelonefrit, Renovaskular, Uremi UNS
-  prd_dt <- merged_ckd[LOPNR %in% cohort$LOPNR & !is.na(prd_cat),
-                       c(id_name, "visit_date", "prd_cat"), 
-                       with=FALSE][, unique(.SD)]
+  prd_dt <- merged_ckd[LOPNR %in% cohort$LOPNR & !is.na(prd_cat), c(id_name, "visit_date", "prd_cat"), with =
+                         FALSE][, unique(.SD)]
   prd_dt[, prd_cat := fifelse(prd_cat == "Diabetesnefropati",
                               1,
                               fifelse(prd_cat == "Hypertoni", 2, 3))]
@@ -276,20 +266,11 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   ### Education category
   ################################################################################
   # extract education, only keep earliest education date for each patient
-  edu_dt <- merged_ckd[
-    LOPNR %in% cohort$LOPNR &
-      !is.na(info_date1) &
-      !is.na(info_type1), 
-    c(id_name, "info_date1", "info_type1"),
-    with = FALSE
-    ][, `:=`
-      (visit_date = as.IDate(info_date1, format = "%m/%d/%Y"),
-      edu = 1)
-      ][
-        order(visit_date),
-        .SD[1], 
-        by = id_name
-      ]
+  edu_dt <- merged_ckd[LOPNR %in% cohort$LOPNR &
+                         !is.na(info_date1) &
+                         !is.na(info_type1), c(id_name, "info_date1", "info_type1"), with = FALSE][, `:=`
+                                                                                                   (visit_date = as.IDate(info_date1, format = "%m/%d/%Y"),
+                                                                                                     edu = 1)][order(visit_date), .SD[1], by = id_name]
   
   # merge with cohort
   cohort_prd[, edu := NA_real_]
@@ -299,8 +280,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     id_name = id_name,
     date_name = "visit_date",
     var_name = "edu",
-    max_roll_days = Inf,
-    setNA = TRUE # set remaining NA to zero
+    lookback_months = Inf,
+    fill_with_zero = TRUE # set remaining NA to zero
   )
   
   ################################################################################
@@ -309,11 +290,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   geo_dt <- merged_ckd[LOPNR %in% cohort$LOPNR &
                          (!is.na(clinic) |
                             !is.na(county)), # at least one is non-missing
-                       c(id_name, 
-                         "visit_date",
-                         "clinic", 
-                         "county"),
-                       with = FALSE][, unique(.SD)]
+                       c(id_name, "visit_date", "clinic", "county"), with = FALSE][, unique(.SD)]
   
   # Define mapping as a named vector
   county_to_region <- c(
@@ -331,20 +308,28 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Jonkoping"       = "Vastra",
     "Dalarna"         = "Vastra",
     "Gavleborg"       = "Vastra",
-    "Kalmar"          = "Other regions", # "Sydostra",
-    "Ostergotland"    = "Other regions", # "Sydostra",
-    "Gotland"         = "Other regions", # "Sydostra",
-    "Norrbotten"      = "Other regions", # "Norra",
-    "Vasterbotten"    = "Other regions", # "Norra",
-    "Vasternorrland"  = "Other regions", # "Norra",
-    "Jamtland"        = "Other regions", # "Norra",
-    "Ok\xe4nd"        = "Other regions", # meaning Unknown, these are all referred to other disciplines, merge with reference
+    "Kalmar"          = "Other regions",
+    # "Sydostra",
+    "Ostergotland"    = "Other regions",
+    # "Sydostra",
+    "Gotland"         = "Other regions",
+    # "Sydostra",
+    "Norrbotten"      = "Other regions",
+    # "Norra",
+    "Vasterbotten"    = "Other regions",
+    # "Norra",
+    "Vasternorrland"  = "Other regions",
+    # "Norra",
+    "Jamtland"        = "Other regions",
+    # "Norra",
+    "Ok\xe4nd"        = "Other regions",
+    # meaning Unknown, these are all referred to other disciplines, merge with reference
     "Utrikes"         = "Other regions"  # meaning Emigrated, merge with reference
   )
   
   # Add region column based on mapping
   geo_dt[, region := county_to_region[county]]
-
+  
   # create clinic levels
   # local clinics
   clinic_lev1 <- c(
@@ -358,7 +343,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Koping",
     "Ljungby",
     # "Lyckesele",
-    "Lycksele", # new
+    "Lycksele",
+    # new
     "Mora",
     "Motala",
     "Nykoping",
@@ -385,7 +371,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Eskilstuna",
     "Falun",
     # "Gävle",
-    "Gavle", # new
+    "Gavle",
+    # new
     "Halmstad",
     "Helsingborg",
     "Jonkoping",
@@ -408,14 +395,17 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # academic clinics
   clinic_lev3 <- c(
     # "Gbg SU/Ostra dialysmott",
-    "Gbg SU/Ostra",       # new
+    "Gbg SU/Ostra",
+    # new
     "Gbg, SU/Njurmed",
-    "Gbg, SU/Trpl",       # new
+    "Gbg, SU/Trpl",
+    # new
     "Karolinska Njur med",
     "Linkoping",
     "Lund Njurmed",
     # "Malmo, njurmed",
-    "Malmo, Heleneholms", # new
+    "Malmo, Heleneholms",
+    # new
     "Molndal",
     "Uppsala, med",
     "Uppsala, Trpl",
@@ -424,48 +414,46 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Gbg/Ostra",
     "Huddinge-K Njur med",
     # "Huddinge-K Njur med (Gammal)",
-    "Huddinge-K, Trpl",   # new
+    "Huddinge-K, Trpl",
+    # new
     "Malmo",
     "Solna-K Njur med",
     # "Solna-K Njur med (Gammal)",
-    "Solna, diaverum",    # new
-    "Nacka",            # dialysis unit, academic 
-    "Sodertalje",       # dialysis unit, academic 
-    "J\xe4rf\xe4lla"    # dialysis unit, academic 
+    "Solna, diaverum",
+    # new
+    "Nacka",
+    # dialysis unit, academic
+    "Sodertalje",
+    # dialysis unit, academic
+    "J\xe4rf\xe4lla"    # dialysis unit, academic
   )
   
   # merge and assign clinic levels, infinite look-back
-  cohort_geo <- geo_dt[
-    cohort_edu, on = .(LOPNR, visit_date),
-    roll = TRUE                 
-  ]
+  cohort_geo <- geo_dt[cohort_edu, on = .(LOPNR, visit_date), roll = TRUE]
   
   # create factor for clinic level
   cohort_geo[, clinic_level := factor(
     fifelse(
-      clinic %in% clinic_lev1, 1,
-      fifelse(clinic %in% clinic_lev2, 2,
-              fifelse(clinic %in% clinic_lev3, 3, NA))),
+      clinic %in% clinic_lev1,
+      1,
+      fifelse(
+        clinic %in% clinic_lev2,
+        2,
+        fifelse(clinic %in% clinic_lev3, 3, NA)
+      )
+    ),
     levels = 1:3,
-    labels = c("Local", "Regional", "Academic"))
-  ]
+    labels = c("Local", "Regional", "Academic")
+  )]
   
   ################################################################################
   ### Nursing home
   ################################################################################
   # keep only nursing home, i.e., codes starting with 15
-  nursing_dt <- outpatient[
-    MVO == "020" | MVO == "243" | MVO == "246",
-    c(id_name, "INDATUMA"), 
-    with = FALSE
-    ][, `:=`
-      (visit_date = as.IDate(as.character(INDATUMA), format = "%Y%m%d"),
-      nursing_home = 1)
-      ][
-        order(visit_date),
-        .SD[1], 
-        by = id_name
-        ]
+  nursing_dt <- outpatient[MVO == "020" |
+                             MVO == "243" | MVO == "246", c(id_name, "INDATUMA"), with = FALSE][, `:=`
+                                                                                                (visit_date = as.IDate(as.character(INDATUMA), format = "%Y%m%d"),
+                                                                                                  nursing_home = 1)][order(visit_date), .SD[1], by = id_name]
   
   # merge with cohort
   cohort_geo[, nursing_home := NA_real_]
@@ -475,8 +463,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     id_name = id_name,
     date_name = "visit_date",
     var_name = "nursing_home",
-    max_roll_days = Inf,
-    setNA = TRUE # set remaining NA to zero
+    lookback_months = Inf,
+    fill_with_zero = TRUE # set remaining NA to zero
   )
   
   ################################################################################
@@ -489,22 +477,16 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   ################################################################################
   # Prepare datasets
   # All-cause death
-  death_dt <- cohort_year[, c(id_name, "DODSDAT"),
-                          with = FALSE][, unique(.SD)]
+  death_dt <- cohort_year[, c(id_name, "DODSDAT"), with = FALSE][, unique(.SD)]
   
   # CV death
-  cv_death_dt <- merged_ckd[, c(id_name, "DODSDAT", "ULORSAK"),
-                            with = FALSE][, unique(.SD)]
+  cv_death_dt <- merged_ckd[, c(id_name, "DODSDAT", "ULORSAK"), with = FALSE][, unique(.SD)]
   
   # MI and Stroke
-  mi_stroke_dt <- merge(inpatient, 
-                        death_dt,
-                        by = id_name, 
-                        all.x = TRUE)
+  mi_stroke_dt <- merge(inpatient, death_dt, by = id_name, all.x = TRUE)
   
   # KRT date
-  krt_dt <- merged_ckd[, c(id_name, "krt_startdate"),
-                       with = FALSE][, unique(.SD)]
+  krt_dt <- merged_ckd[, c(id_name, "krt_startdate"), with = FALSE][, unique(.SD)]
   
   # Define outcomes
   outcomes_list <- list(
@@ -517,7 +499,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       # no code column needed
       code_col = NULL,
       # no ICD filtering
-      codes = NULL               
+      codes = NULL
     ),
     
     # Cardiovascular death: uses DODSDAT and ULORSAK from merged CKD dataset
@@ -529,7 +511,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       # ICD code column for cause of death
       code_col = "ULORSAK",
       # pattern to select cardiovascular deaths
-      codes = "^I"               
+      codes = "^I"
     ),
     
     # Myocardial infarction (MI): ICD codes I21, I22, I23 from inpatient dataset
@@ -541,7 +523,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       # diagnosis code column
       code_col = "HDIA",
       # ICD codes for MI
-      codes = "^I21|^I22|^I23"   
+      codes = "^I21|^I22|^I23"
     ),
     
     # Stroke: ICD codes I60-I64 from inpatient dataset
@@ -565,16 +547,14 @@ for (cohort_name in c("cohort", "elig_cohort")) {
       # no code column needed
       code_col = NULL,
       # no ICD filtering
-      codes = NULL               
+      codes = NULL
     )
   )
   
   # Define windows
-  windows <- list(
-    "1y" = 1,
-    "2y" = 2,
-    "inf" = 100
-  )
+  windows <- list("1y" = 1,
+                  "2y" = 2,
+                  "inf" = 100)
   
   # add outcomes to cohort_dt
   cohort_outcomes <- add_multiple_outcomes(
@@ -645,8 +625,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     )),
     
     iron_cat = factor(
-      fifelse(iron_iv==1, 1,
-              fifelse(iron_po==1, 2, 0)),
+      fifelse(iron_iv == 1, 1, fifelse(iron_po == 1, 2, 0)),
       levels = c(0, 1, 2),
       labels = c("No iron", "IV iron", "PO iron")
     ),
@@ -711,12 +690,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   )]
   
   # save cohort
-  save(cohort_final, file = file.path(
-    paste0(
-      "Data/analysis_data_",
-      cohort_name,
-      "_new.Rdata"
-    )
-  ))
+  save(cohort_final, file = file.path(paste0(
+    "Data/analysis_data_", cohort_name, "_new.Rdata"
+  )))
 }
-
