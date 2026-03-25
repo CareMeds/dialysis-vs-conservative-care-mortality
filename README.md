@@ -81,17 +81,20 @@ Compute average treatment effects
 5. Difference in RMST
 6. Hazard ratio
 
-## 6 - SA positivity
-Compare estimates of average treatment effect when applying overlap weighting, Crump trimming, Sturmer traimming, or Walker trimming.
-
-## 7 - Subgroup analysis
-Perform subgroup analysis for age, eGFR, and acute kidney injury.
-
-## 8 - Continuous HTE
+## 6 - Continuous HTE
 1. Fit a risk model using age, eGFR, malignancies, diabetes mellitus, ischemic heart disease, valvular heart disase, peripheral vascular disease, sex, and albumin.
 2. Predict risk of mortality for each individual.
 3. Fit a model with the outcome all-cause moratality, and predictors treatment, predicted mortality risk, and its interaction.
 4. For every level of predicted mortality risk, estimate risk difference, difference in RMST, and hazard ratio.
 
-## 9 - Competing risk time-to-dialysis
+## 7 - SA positivity
+Compare estimates of average treatment effect when applying overlap weighting, Crump trimming, Sturmer traimming, or Walker trimming.
+
+## 8 - Competing risk time-to-dialysis
 Some patients choosing dialysis do not immediately initiate dialysis. To estimate how much time patients spend in dialysis state in the two years following their decision. For those choosing dialysis, we fit a multi-state illness-death model with the states "Alive without dialysis", "Dialysis", and "Death".
+
+## 9 - Example Supplemental Methods
+Calculation of individualized treatment of an example patient in Supplemental Materials 1.
+
+## 10 - SA unmeasured confounding
+Sensitivity analysis investigating unmeasured confounding using 1) simple bias analysis; 2) E-value; 3) quantitative bias analysis.
