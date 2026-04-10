@@ -77,7 +77,7 @@ dialysis_long <- dialysis_df[, .(LOPNR,
       time_until_PD       = "Peritoneal Dialysis"
     )
   ) |>
-  dplyr::filter(is.finite((time_years))) # TODO: write
+  dplyr::filter(is.finite((time_years)))
 
 # histogram
 time_hist <- ggplot2::ggplot(dialysis_long, ggplot2::aes(x = time_years, fill = type)) +
@@ -117,52 +117,6 @@ ggplot2::ggsave(
   width = 10,
   height = 8,
   dpi = 300
-)
-
-cat(
-  " Maximum time until dialysis                                         :",
-  max(dialysis_df$time_until_dialysis, na.rm=TRUE),
-  "\n",
-  "# administrative censoring                                          :",
-  dialysis_df[is.na(time_until_dialysis), .N],
-  "\n",
-  "# competing event                                                   :",
-  dialysis_df[time_until_dialysis > 2, .N],
-  "\n",
-  "# patients that chose dialysis starting dialysis within two years   :",
-  dialysis_df[!is.na(time_until_dialysis) &
-                time_until_dialysis <= 2, .N],
-  "\n",
-  "# patients that chose HD starting dialysis within two years         :",
-  dialysis_df[!is.na(time_until_HD) &
-                time_until_HD <= 2, .N],
-  "\n",
-  "# patients that chose PD starting dialysis within two years         :",
-  dialysis_df[!is.na(time_until_PD) &
-                time_until_PD <= 2, .N],
-  "\n",
-  "# patients that chose dialysis starting dialysis within 3 months    :",
-  dialysis_df[!is.na(time_until_dialysis) &
-                time_until_dialysis <= 3 / 12, .N],
-  "\n",
-  "# patients that chose dialysis starting dialysis between 3-6 months :",
-  dialysis_df[!is.na(time_until_dialysis) &
-                time_until_dialysis > 3 / 12 &
-                time_until_dialysis <= 0.5, .N],
-  "\n",
-  "# patients that chose dialysis starting dialysis between 6-12 months:",
-  dialysis_df[!is.na(time_until_dialysis) &
-                time_until_dialysis > 0.5 &
-                time_until_dialysis <= 1, .N],
-  "\n",
-  "# patients that chose dialysis starting dialysis between 12-24 months:",
-  dialysis_df[!is.na(time_until_dialysis) &
-                time_until_dialysis > 1 &
-                time_until_dialysis <= 2, .N],
-  "\n",
-  "# patients that chose dialysis but died before starting dialysis within two years:",
-  dialysis_df[time2event_death_2y < time_until_dialysis_days, .N],
-  "\n"
 )
 
 ################################################################################
@@ -574,11 +528,6 @@ trans_dt <- merged_ckd[LOPNR %in% baseline$LOPNR &
 baseline_TX <- merge(baseline, trans_dt, all.x = TRUE, by = id_name)
 baseline_TX[, time_until_TX := krt_startdate - visit_date]
 
-cat(" Number of transplantations in two years after dialysis decision:",
-    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
-                              baseline_TX$time_until_TX < 2 * 365, "LOPNR"])),
-    "\n")
-
 ################################################################################
 ### Summarize number of decisions
 ################################################################################
@@ -650,23 +599,59 @@ three_decisions_dt[LOPNR == 176579584 | LOPNR == 495890215, .(
   decision_modality3
 )]
 
-# Generate the summary table
-ndec <- summarize_binary_vars(
-  baseline,
-  group_var = trt_var,
-  vars = c("n_decision_2", "n_decision_3"),
-  labels = c("Two treatment switches", "Three treatment switches")
+stats_dialysis <- data.frame(
+  names = c("Maximum time until dialysis",
+            "# patients choosing dialysis", 
+            "Treatment switches for dialysis",
+            "# treatment switches for dialysis",
+            "Treatment switches for conservative care",
+            "# treatment switches for conservative care",
+            "# patients that chose dialysis starting dialysis within two years",
+            "# patients that chose PD starting dialysis within two years",
+            "# patients that chose HD starting dialysis within two years",
+            "# patients that chose dialysis starting dialysis within 3 months",
+            "# patients that chose dialysis starting dialysis between 3-6 months",
+            "# patients that chose dialysis starting dialysis between 6-12 months",
+            "# patients that chose dialysis starting dialysis between 12-24 months",
+            "# patients that chose dialysis but died before starting dialysis within two years",
+            "Number of transplantations in two years after dialysis decision:",
+            "% transplantations in two years after dialysis decision:"
+  ),
+  counts = c(max(dialysis_df$time_until_dialysis, na.rm=TRUE),
+             nrow(dialysis_df),
+             sum(baseline$n_decision_2==1 & baseline$trt==1),
+             sum(baseline$n_decision_2==1 & baseline$trt==1) / sum(baseline$trt==1) * 100,
+             sum(baseline$n_decision_2==1 & baseline$trt==0),
+             sum(baseline$n_decision_2==1 & baseline$trt==0) / sum(baseline$trt==0) * 100,
+             dialysis_df[!is.na(time_until_dialysis) &
+                           time_until_dialysis <= 2, .N],
+             dialysis_df[!is.na(time_until_PD) &
+                           time_until_PD <= 2, .N],
+             dialysis_df[!is.na(time_until_HD) &
+                           time_until_HD <= 2, .N],
+             dialysis_df[!is.na(time_until_dialysis) &
+                           time_until_dialysis <= 3 / 12, .N],
+             dialysis_df[!is.na(time_until_dialysis) &
+                           time_until_dialysis > 3 / 12 &
+                           time_until_dialysis <= 0.5, .N],
+             dialysis_df[!is.na(time_until_dialysis) &
+                           time_until_dialysis > 0.5 &
+                           time_until_dialysis <= 1, .N],
+             dialysis_df[!is.na(time_until_dialysis) &
+                           time_until_dialysis > 1 &
+                           time_until_dialysis <= 2, .N],
+             dialysis_df[time2event_death_2y < time_until_dialysis_days, .N],
+             nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
+                                       baseline_TX$time_until_TX < 2 * 365, "LOPNR"])),
+             nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
+                                       baseline_TX$time_until_TX < 2 * 365, "LOPNR"])) / sum(baseline$trt==1) * 100
+  )
 )
-
-# Rename columns for readability
-names(ndec) <- c("Variable", "Overall", "Dialysis", "Conservative Care")
-print(ndec)
-
-# save table
 openxlsx::write.xlsx(
-  ndec,
+  stats_dialysis,
   rowNames = FALSE,
-  file = paste0(results_path, "Main/Number_of_decisions.xlsx")
+  colNames = FALSE,
+  file = paste0(results_path, "Main/Statistics_text.xlsx")
 )
 
 # save cohort

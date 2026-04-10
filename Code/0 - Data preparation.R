@@ -23,6 +23,7 @@ Sys.setlocale("LC_TIME", "en_US.UTF-8")
 
 # load libraries
 library(data.table)
+library(patchwork)
 
 ################################################################################
 ### Select relevant variables from CKD file ####################################
@@ -60,7 +61,8 @@ ckd <- SOS_CKDFINAL2024[, c(
   "iron_type",
   "prd_cat",
   "clinic",
-  "county"
+  "county",
+  "crp"
 )]
 
 # convert to date
@@ -222,7 +224,7 @@ merged_ckd[, egfr2021 := ckd_epi_2021_cr(screa, age, female)]
 merged_ckd[, hb := hb * 0.6206 / 10]
 
 # Ensure to only include visits up to 2023
-end_date <- as.IDate("2023-12-31")
+end_date <- as.IDate("2024-12-31")
 merged_ckd <- merged_ckd[visit_date <= end_date]
 
 # save file

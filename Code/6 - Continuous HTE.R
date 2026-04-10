@@ -29,6 +29,9 @@ source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
+# perform internal validation 
+validate <- TRUE
+
 ################################################################################
 ### Load data ##################################################################
 ################################################################################
@@ -41,105 +44,62 @@ load("Data/cohort_with_models.Rdata")
 elig_Surv <- survival::Surv(elig_cohort$time2event_death_2y, elig_cohort$event_death_2y)
 
 # use external predictors identified by Chava
+elig_cohort[, log_crp := log(crp + 1)]
+baseline[, log_crp := log(crp + 1)]
+risk_model_cox <- survival::coxph(
+  elig_Surv ~ age + egfr2021 + cancer + dm + ihd +
+    vhd + pvd + female + albumin + log_crp,
+  data = elig_cohort,
+  method = "breslow"
+)
+
+# save table
+table_risk <- risk_model_table(
+  model_cox  = risk_model_cox,
+  predictor_labels = c(
+    "   Age (per 1 year)",
+    "   eGFR (per 1 ml/min/1.73 m²)",
+    "   Malignancies",
+    "   Diabetes mellitus",
+    "   Ischemic heart disease",
+    "   Valvular heart disease",
+    "   Peripheral vascular disease",
+    "   Female vs. male",
+    "   Albumin (per 1 g/L)",
+    "   CRP (log-transformed, per unit increase)"
+  ),
+  horizon      = horizon
+)
+
+# create plot on hazard scale
 dd <- rms::datadist(elig_cohort)
 options(datadist = "dd")
 risk_model <- rms::cph(
   elig_Surv ~ age + egfr2021 + cancer + dm + ihd +
-    vhd + pvd + female + albumin,
+    vhd + pvd + female + albumin + log(crp + 1),
   data = elig_cohort,
   method = c("breslow"),
   y = TRUE,
   x = TRUE
 )
-# Wald test
-anova(risk_model)
-# log relative hazard scale
-plot(Predict(risk_model))
-# hazard scale
-plot(Predict(risk_model, fun = exp))
-
-# Hazard ratios from model
-sum_df <- as.data.frame(summary(
-  risk_model,
-  age = c(0, 1),
-  egfr2021 = c(0, 1),
-  albumin = c(0, 1)
-))
-wald_test <- anova(risk_model)[-nrow(anova(risk_model)), 1]
-
-# baseline hazard
-bh <- survival::basehaz(risk_model)
-h0 <- bh$hazard[bh$time == horizon]
-
-# save risk model
-pred_df <- data.frame(
-  short = c("h0", rownames(sum_df[sum_df$Type == 1, ])),
-  long = c(
-    "Baseline hazard at two years",
-    "Age per 1 year",
-    "eGFR per 1 ml/min/1.73m2",
-    "Maligancies",
-    "Diabetes mellitus",
-    "Ischemic heart disease",
-    "Heart valve disease",
-    "Primary vascular disease",
-    "Female versus male",
-    "Albumin per 1 g/L"
-  )
+png(
+  filename = "Results/Supplemental/Figure_M1_Risk_model.png",
+  width = 2000,
+  height = 2000,
+  res = 300
 )
-risk_model_table <- data.frame(
-  Predictor = pred_df[rownames(sum_df[sum_df$Type == 1, ]) %in% pred_df$short, "long"],
-  est_CI = c(round(h0, 2), fmt_ci(sum_df[sum_df$Type == 1, "Effect"], sum_df[sum_df$Type == 1, "Lower 0.95"], sum_df[sum_df$Type == 1, "Upper 0.95"], digits = 2)),
-  HR_CI = c("", fmt_ci(sum_df[sum_df$Type == 2, "Effect"], sum_df[sum_df$Type == 2, "Lower 0.95"], sum_df[sum_df$Type == 2, "Upper 0.95"], digits = 2)),
-  Wald = c("", fmt(wald_test))
-)
-openxlsx::write.xlsx(
-  risk_model_table,
-  rowNames = FALSE,
-  file = paste0(results_path, "Supplemental/Table_S4.xlsx")
-)
+plot(Predict(risk_model, fun = exp), ylab = "Hazard Ratio")
+dev.off()
 
-# plot PS versus 2-year predicted mortality risk
-baseline[, lp_risk := predict(risk_model, newdata = .SD)][, pred_risk := PredictionTools::fun.event(h0 = h0, lp = lp_risk)]
-
-# Creating a single plot stratified by trt
-pred_risk_plot <- ggplot2::ggplot(baseline,
-                                  ggplot2::aes(
-                                    x = pred_risk,
-                                    y = ps,
-                                    color = as.factor(trt),
-                                    shape = as.factor(trt)
-                                  )) +
-  ggplot2::geom_point(alpha = 0.7) +
-  ggplot2::scale_color_manual(
-    values = c(manual_colors[1], manual_colors[2]),
-    labels = c("0" = "Conservative care", "1" = "Dialysis")
-  ) +
-  ggplot2::scale_shape_manual(
-    values = c(16, 17),
-    labels = c("0" = "Conservative care", "1" = "Dialysis")
-  ) +
-  ggplot2::labs(
-    x = "Predicted 2-year mortality risk",
-    y = "Propensity score",
-    color = "Treatment choice",
-    shape = "Treatment choice"
-  ) +
-  ggplot2::theme_minimal() +
-  ggplot2::theme(plot.background = ggplot2::element_rect("white"))
-ggplot2::ggsave(
-  plot = pred_risk_plot,
-  filename = paste0(results_path, "Other/Figure_PS_risk.png"),
-  width = 7,
-  height = 5,
-  dpi = 300
-)
-
-################################################################################
-### Internal validation
-################################################################################
+# ################################################################################
+# ### Internal validation
+# ################################################################################
 # --- Initialise storage --------------------------------------------------
-n_bootstraps_elig <- 1000
+if (!validate){
+  n_bootstraps_elig <- 1
+} else {
+  n_bootstraps_elig <- 1000
+}
 n_iter <- n_bootstraps_elig + 1L          # iteration 1 = original sample
 
 metrics <- list(
@@ -239,14 +199,81 @@ for (cohort in list(list(prefix = "elig", label = "elig"),
 }
 
 ################################################################################
+### Explore linearity of age
+################################################################################
+fit_age_linear <- survival::coxph(
+  survival::Surv(time2event_death_2y, event_death_2y) ~
+    trt * age,
+  data = baseline,
+  method = c("breslow"),
+  weights = baseline$sw_IPTW,
+  x = TRUE,
+  y = TRUE
+)
+
+# save table
+ITE_model_age <- risk_model_table(
+  model_cox  = fit_age_linear,
+  predictor_labels = c(
+    "   Dialysis",
+    "   Age",
+    "   Dialysis * age"
+  ),
+  horizon      = horizon
+)
+
+################################################################################
+### Explore linearity of risk
+################################################################################
+baseline$lp_risk <- predict(risk_model, newdata = baseline)
+fit_lp_linear <- survival::coxph(
+  survival::Surv(time2event_death_2y, event_death_2y) ~
+    trt * lp_risk,
+  data = baseline,
+  method = c("breslow"),
+  weights = baseline$sw_IPTW,
+  x = TRUE,
+  y = TRUE
+)
+
+# save table
+ITE_model_lp <- risk_model_table(
+  model_cox  = fit_lp_linear,
+  predictor_labels = c(
+    "   Dialysis",
+    "   Linear predictor",
+    "   Dialysis * Linear predictor"
+  ),
+  horizon      = horizon
+)
+
+# save to xlsx
+summmarized_table <- rbind(
+  c("Risk model", "", "", ""),
+  table_risk$risk_model_table,
+  c("ITE model for age", "", "", ""),
+  ITE_model_age$risk_model_table,
+  c("ITE model for linear predictor", "", "", ""),
+  ITE_model_lp$risk_model_table
+)
+openxlsx::write.xlsx(summmarized_table, 
+                     file = paste0(results_path, "Supplemental/Table_S4_risk_ITE.xlsx"), 
+                     rowNames = FALSE)
+
+################################################################################
 ### Continuous HTE
 ################################################################################
 data_sets <- c("baseline", "baseline[Davies_score >= 2]")
+# probabilities between 40% and 90% mortality risk
+p_range <- c(0.2, 0.4, 0.9)
 for (nr_analysis in 1:2) {
+  cat("Perform analysis on",
+      ifelse(nr_analysis == 1, "full data\n", "Davies >= 2 data\n"))
   # determine LP and survival probability using risk model
   analysis_data <- eval(parse(text = data_sets[nr_analysis]))
   analysis_data$lp_risk <- predict(risk_model, newdata = analysis_data)
-  analysis_data$pred_risk <- PredictionTools::fun.event(h0 = h0, lp = analysis_data$lp_risk)
+  analysis_data$pred_risk <- PredictionTools::fun.event(h0 = table_risk$h0, 
+                                                        lp = analysis_data$lp_risk)
   
   # compute estimates across 100 risk points
   for (B in 1:(n_bootstraps + 1)) {
@@ -289,60 +316,82 @@ for (nr_analysis in 1:2) {
     }
     
     # compute HTE across age
+    show_test <- ifelse(B == 1, TRUE, FALSE)
     age_df <- compute_HTE(
       data = bootstrap,
+      unit = unit,
       horizon = horizon,
+      event_var = outcome_var,
+      time2event_var = time2outcome_var,
       effect_modifier = "age",
       effect_modifier_range = seq(65, 95, 1),
-      print_test_HTE = ifelse(B == 1 &
-                                nr_analysis == 1, TRUE, FALSE)
+      add_interaction = TRUE,
+      test_relative_HTE = show_test
     )
     
     # compute HTE across predicted risk
+    # get corresponding linear predictor
+    lp_range <- log(-log(1 - p_range) / table_risk$h0)
     pred_risk_df <- compute_HTE(
       data = bootstrap,
+      unit = unit,
       horizon = horizon,
+      event_var = outcome_var,
+      time2event_var = time2outcome_var,
       effect_modifier = "lp_risk",
-      effect_modifier_range = seq(
-        min(analysis_data$lp_risk, na.rm = TRUE) + 0.05,
-        max(analysis_data$lp_risk, na.rm = TRUE) - 0.05,
-        length.out = 100
-      ),
-      print_test_HTE = ifelse(B == 1 &
-                                nr_analysis == 1, TRUE, FALSE)
+      effect_modifier_range = sort(c(
+        seq(lp_range[1], lp_range[3], length.out = 99), lp_range[2]
+      )),
+      add_interaction = TRUE,
+      test_relative_HTE = show_test
     )
     
     # save results
     if (B == 1) {
       # report effect modifier using probabilities and not linear predictor
-      pred_risk_df$effect_modifier_range <- PredictionTools::fun.event(h0 = h0, lp = pred_risk_df$effect_modifier_range)
+      pred_risk_df$effect_modifier_range <- PredictionTools::fun.event(h0 = table_risk$h0,
+                                                                       lp = pred_risk_df$effect_modifier_range)
+      summary(pred_risk_df$effect_modifier_range)
       
       # original sample
       age_RD <- age_df[, c("effect_modifier_range", "RD")]
+      age_RR <- age_df[, c("effect_modifier_range", "RR")]
       age_dRMST <- age_df[, c("effect_modifier_range", "dRMST")]
       age_HR <- age_df[, c("effect_modifier_range", "HR")]
+      p_value_age <- unique(age_df$p_for_HTE)
+      p_value_age <- ifelse(p_value_age < 0.001, "<0.001", sprintf("%.3f", p_value_age))
       
       pred_risk_RD <- pred_risk_df[, c("effect_modifier_range", "RD")]
+      pred_risk_RR <- pred_risk_df[, c("effect_modifier_range", "RR")]
       pred_risk_dRMST <- pred_risk_df[, c("effect_modifier_range", "dRMST")]
       pred_risk_HR <- pred_risk_df[, c("effect_modifier_range", "HR")]
+      p_value_pred_risk <- unique(pred_risk_df$p_for_HTE)
+      p_value_pred_risk <- ifelse(p_value_pred_risk < 0.001, "<0.001", sprintf("%.3f", p_value_pred_risk))
+      
     } else{
       # bootstrapped sample
       age_RD[, paste0("boot_", B - 1)] <- age_df$RD
+      age_RR[, paste0("boot_", B - 1)] <- age_df$RR
       age_dRMST[, paste0("boot_", B - 1)] <- age_df$dRMST
       age_HR[, paste0("boot_", B - 1)] <- age_df$HR
       
       pred_risk_RD[, paste0("boot_", B - 1)] <- pred_risk_df$RD
+      pred_risk_RR[, paste0("boot_", B - 1)] <- pred_risk_df$RR
       pred_risk_dRMST[, paste0("boot_", B - 1)] <- pred_risk_df$dRMST
       pred_risk_HR[, paste0("boot_", B - 1)] <- pred_risk_df$HR
     }
   }
   
   assign(paste0("age_RD_", nr_analysis), age_RD)
+  assign(paste0("age_RR_", nr_analysis), age_RR)
   assign(paste0("age_dRMST_", nr_analysis), age_dRMST)
   assign(paste0("age_HR_", nr_analysis), age_HR)
+  assign(paste0("p_value_age_", nr_analysis), p_value_age)
   assign(paste0("pred_risk_RD_", nr_analysis), pred_risk_RD)
+  assign(paste0("pred_risk_RR_", nr_analysis), pred_risk_RR)
   assign(paste0("pred_risk_dRMST_", nr_analysis), pred_risk_dRMST)
   assign(paste0("pred_risk_HR_", nr_analysis), pred_risk_HR)
+  assign(paste0("p_value_pred_risk_", nr_analysis), p_value_pred_risk)
 }
 
 # compute figures and tables
@@ -350,6 +399,11 @@ HTE_table <- data.frame()
 for (nr_analysis in 1:2) {
   for (effect_modifier in c("age", "pred_risk")) {
     # create histogram of variable stratified by treatment
+    analysis_data <- eval(parse(text = data_sets[nr_analysis]))
+    analysis_data$lp_risk <- predict(risk_model, newdata = analysis_data)
+    analysis_data$pred_risk <- PredictionTools::fun.event(h0 = table_risk$h0, 
+                                                          lp = analysis_data$lp_risk)
+    
     hist_stratified <- create_histogram_stratified(
       dt = analysis_data,
       var_name = effect_modifier,
@@ -357,7 +411,7 @@ for (nr_analysis in 1:2) {
       manual_colors = manual_colors
     )
     
-    for (measure in c("RD", "dRMST", "HR")) {
+    for (measure in c("RD", "dRMST", "RR", "HR")) {
       # legend of histogram
       if (effect_modifier == "pred_risk" & measure == "dRMST") {
         # add legend title to dRMST plot
@@ -389,14 +443,16 @@ for (nr_analysis in 1:2) {
       # make effect plot
       effect_plot_out <- effect_plot(
         estimates_df = estimates_df,
-        y_middle = ifelse(measure == "HR", 1, 0),
+        y_middle = ifelse(measure == "HR" | measure == "RR", 1, 0),
         measure = measure,
-        y_max_RD = ifelse(nr_analysis == 1, 21, 65),
-        # y_max_RD = ifelse(nr_analysis == 1, 14, 14),
-        y_min_dRMST = ifelse(nr_analysis == 1, -3, -9),
-        # y_min_dRMST = ifelse(nr_analysis == 1, -2, -2),
-        y_max_HR = ifelse(nr_analysis == 1, 1.3, 1.9)
-        # y_max_HR = ifelse(nr_analysis == 1, 3, 3)
+        y_min_RD = -70,
+        y_max_RD = ifelse(nr_analysis == 1, 21, 56),
+        y_min_RR = 0,
+        y_max_RR = ifelse(nr_analysis == 1, 1.3, 1.8),
+        y_min_dRMST = ifelse(nr_analysis == 1, -3, -8),
+        y_max_dRMST = 10,
+        y_min_HR = 0,
+        y_max_HR = ifelse(nr_analysis == 1, 1.3, 1.8)
       )
       
       # control x-axis of effect plot
@@ -428,19 +484,26 @@ for (nr_analysis in 1:2) {
         )
         range <- estimates_df[sel_rows, "effect_modifier_range"]
       } else{
-        sel_rows <- c(which(round(
-          estimates_df$effect_modifier_range, 2
-        ) == 0.40), which(round(
-          estimates_df$effect_modifier_range, 2
-        ) == 0.90))
+        sel_rows <- c(
+          which(estimates_df$effect_modifier_range == p_range[2]),
+          which(estimates_df$effect_modifier_range == p_range[3])
+        )
         range <- sprintf("%.2f", estimates_df[sel_rows, "effect_modifier_range"])
       }
-      est <- sprintf(ifelse(measure == "HR", "%.2f", "%.1f"), estimates_df[sel_rows, measure])
+      est <- sprintf(ifelse(measure == "RR" |
+                              measure == "HR", "%.2f", "%.1f"),
+                     estimates_df[sel_rows, measure])
       CI <- paste0(
         "(",
-        sprintf(ifelse(measure == "HR", "%.2f", "%.1f"), estimates_df[sel_rows, paste0(measure, "_lower")]),
+        sprintf(
+          ifelse(measure == "RR" | measure == "HR", "%.2f", "%.1f"),
+          estimates_df[sel_rows, paste0(measure, "_lower")]
+        ),
         ", ",
-        sprintf(ifelse(measure == "HR", "%.2f", "%.1f"), estimates_df[sel_rows, paste0(measure, "_upper")]),
+        sprintf(
+          ifelse(measure == "RR" | measure == "HR", "%.2f", "%.1f"),
+          estimates_df[sel_rows, paste0(measure, "_upper")]
+        ),
         ")"
       )
       
@@ -455,9 +518,13 @@ for (nr_analysis in 1:2) {
   
   # save figure
   ggplot2::ggsave(
-    plot = (age_RD_plot | age_dRMST_plot | age_HR_plot) /
-      (pred_risk_RD_plot |
-         pred_risk_dRMST_plot | pred_risk_HR_plot),
+    plot = (age_RD_plot | age_RR_plot | age_dRMST_plot | age_HR_plot) /
+      (
+        pred_risk_RD_plot | 
+          pred_risk_RR_plot |
+          pred_risk_dRMST_plot | 
+          pred_risk_HR_plot
+      ),
     filename = paste0(
       results_path,
       ifelse(
@@ -467,76 +534,38 @@ for (nr_analysis in 1:2) {
       )
     ),
     width = 20,
-    height = 20,
+    height = 15,
     dpi = 300
   )
 }
 
 # save table
+HTE_table_final <- data.frame(
+  HTE_table,
+  c(p_value_age_1, "", p_value_pred_risk_1, "",
+    p_value_age_2, "", p_value_pred_risk_2, "")
+)
+colnames(HTE_table_final) <- c("Effect modifier",
+                               "RD",
+                               "95% CI",
+                               "dRMST",
+                               "95% CI",
+                               "RR",
+                               "95% CI",
+                               "HR",
+                               "95% CI",
+                               "p-value")
 openxlsx::write.xlsx(
-  cbind(HTE_table[, 1:3], rep("", 8), HTE_table[, 4:5], rep("", 8), HTE_table[, 6:7]),
+  HTE_table_final,
   rowNames = FALSE,
   file = paste0(results_path, "Supplemental/Table_S6_HTE.xlsx")
 )
 
-################################################################################
-### Explore linearity of risk
-################################################################################
-baseline$lp_risk <- predict(risk_model, newdata = baseline)
-fit_linear <- rms::cph(
-  survival::Surv(time2event_death_2y, event_death_2y) ~
-    trt * lp_risk,
-  data = baseline,
-  method = c("breslow"),
-  weights = baseline$sw_IPTW,
-  x = TRUE,
-  y = TRUE
-)
-fit_pol_2 <- rms::cph(
-  survival::Surv(time2event_death_2y, event_death_2y) ~
-    trt * rms::pol(lp_risk, 2),
-  data = baseline,
-  method = c("breslow"),
-  weights = baseline$sw_IPTW,
-  x = TRUE,
-  y = TRUE
-)
-fit_pol_3 <- rms::cph(
-  survival::Surv(time2event_death_2y, event_death_2y) ~
-    trt * rms::pol(lp_risk, 3),
-  data = baseline,
-  method = c("breslow"),
-  weights = baseline$sw_IPTW,
-  x = TRUE,
-  y = TRUE
-)
-fit_rcs_3 <- rms::cph(
-  survival::Surv(time2event_death_2y, event_death_2y) ~
-    trt * rms::rcs(lp_risk, 3),
-  data = baseline,
-  method = c("breslow"),
-  weights = baseline$sw_IPTW,
-  x = TRUE,
-  y = TRUE
-)
-fit_rcs_4 <- rms::cph(
-  survival::Surv(time2event_death_2y, event_death_2y) ~
-    trt * rms::rcs(lp_risk, 4),
-  data = baseline,
-  method = c("breslow"),
-  weights = baseline$sw_IPTW,
-  x = TRUE,
-  y = TRUE
-)
-BIC(fit_linear)
-BIC(fit_pol_2)
-BIC(fit_pol_3)
-BIC(fit_rcs_3)
-BIC(fit_rcs_4)
-
 # save variables
 save(
+  id_name,
   listvar,
+  listvar_main,
   catvar,
   contvar,
   non_normal_vars,
@@ -557,5 +586,8 @@ save(
   manual_colors,
   estimates_df,
   metrics,
+  table_risk,
+  ITE_model_lp,
+  ITE_model_age,
   file = file.path("Data/cohort_with_prob.Rdata")
 )

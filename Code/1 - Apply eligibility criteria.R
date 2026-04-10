@@ -450,8 +450,11 @@ age_80_comorbidities[, Davies_score := rowSums(.SD, na.rm = TRUE), .SDcols = Dav
 outpatient <- UT_R_PAR_OV_123160_2023
 setDT(outpatient)
 first_palliative <- outpatient[LOPNR %in% age_80_comorbidities$LOPNR &
-                                 (MVO == "061" | MVO == "020" | MVO == "243" | MVO == "246"), c("LOPNR", "INDATUMA"), with = FALSE][, `:=`
-                                                                                                                                    (INDATUMA = as.IDate(as.character(INDATUMA), format = "%Y%m%d"))][order(INDATUMA), .SD[1], by = "LOPNR"]
+                                 (MVO == "061" | MVO == "020" | 
+                                    MVO == "243" | MVO == "246"),
+                               c("LOPNR", "INDATUMA"),
+                               with = FALSE][, `:=`
+                                             (INDATUMA = as.IDate(as.character(INDATUMA), format = "%Y%m%d"))][order(INDATUMA), .SD[1], by = "LOPNR"]
 setnames(first_palliative, "INDATUMA", "date_palliative_nursing")
 
 # append first date to data
@@ -535,46 +538,38 @@ elig_cohort <- elig_cohort[, S := ifelse(is.na(trt), 0, 1)]
 ################################################################################
 ### Flow chart
 ################################################################################
-cat(
-  " Initial number of patients                               :",
-  # 64187
-  merged_ckd[, uniqueN(LOPNR)],
-  "\n Excluded patients with eGFR < 20                        :",
-  # 36273
-  merged_ckd[, uniqueN(LOPNR)] - low_egfr[, uniqueN(LOPNR)],
-  "\n Excluded patients with age>=65 & Davies>=2 OR age >= 80 :",
-  # 11883
-  low_egfr[, uniqueN(LOPNR)] - age_crit_dt[, uniqueN(LOPNR)],
-  "\n Excluded patients with all lab measurements             :",
-  # 2078
-  age_crit_dt[, uniqueN(LOPNR)] - lab_complete_dt[, uniqueN(LOPNR)],
-  "\n Excluded patients without transplantation or dialysis   :",
-  # 2241
-  lab_complete_dt[, uniqueN(LOPNR)] - no_trans_dia_dt[, uniqueN(LOPNR)],
-  "\n Excluded patients with history of hiv or dementia       :",
-  # 219
-  no_trans_dia_dt[, uniqueN(LOPNR)] - no_hiv_dementia_dt[, uniqueN(LOPNR)],
-  "\n Excluded patients without palliative care               :",
-  # 150
-  no_hiv_dementia_dt[, uniqueN(LOPNR)] - no_palliative_dt[, uniqueN(LOPNR)],
-  "\n Eligible patients                                       :",
-  # 11343
-  no_palliative_dt[, uniqueN(LOPNR)],
-  "\n Excluded patients with treatment decision dialysis or CC:",
-  # 8225
-  no_palliative_dt[, uniqueN(LOPNR)] - cohort[, uniqueN(LOPNR)],
-  "\n Final cohort                                            :",
-  # 3118
-  cohort[, .N],
-  "\n Patients who chose conservative care                    :",
-  # 983
-  cohort[trt == 0, .N],
-  "\n Patients who chose dialysis                             :",
-  # 2135
-  cohort[trt == 1, .N],
-  "\n"
+flow_chart <- data.frame(
+  names = c("Initial number of patients",
+            "Excluded patients with eGFR < 20",
+            "Excluded patients with age>=65 & Davies>=2 OR age >= 80",
+            "Excluded patients with all lab measurements",
+            "Excluded patients without transplantation or dialysis",
+            "Excluded patients with history of hiv or dementia",
+            "Excluded patients without palliative care",
+            "Eligible patients",
+            "Excluded patients with treatment decision dialysis or CC",
+            "Final cohort",
+            "Patients who chose conservative care",
+            "Patients who chose dialysis"),
+  counts = c(  merged_ckd[, uniqueN(LOPNR)],
+               merged_ckd[, uniqueN(LOPNR)] - low_egfr[, uniqueN(LOPNR)],
+               low_egfr[, uniqueN(LOPNR)] - age_crit_dt[, uniqueN(LOPNR)],
+               age_crit_dt[, uniqueN(LOPNR)] - lab_complete_dt[, uniqueN(LOPNR)],
+               lab_complete_dt[, uniqueN(LOPNR)] - no_trans_dia_dt[, uniqueN(LOPNR)],
+               no_trans_dia_dt[, uniqueN(LOPNR)] - no_hiv_dementia_dt[, uniqueN(LOPNR)],
+               no_hiv_dementia_dt[, uniqueN(LOPNR)] - no_palliative_dt[, uniqueN(LOPNR)],
+               no_palliative_dt[, uniqueN(LOPNR)],
+               no_palliative_dt[, uniqueN(LOPNR)] - cohort[, uniqueN(LOPNR)],
+               cohort[, .N],
+               cohort[trt == 0, .N],
+               cohort[trt == 1, .N]))
+openxlsx::write.xlsx(
+  x = flow_chart,
+  file = "Data/Figures/Flow_chart.xlsx",
+  rowNames = FALSE,
+  overwrite = TRUE
 )
-
+  
 # save file
 save(
   elig_cohort,

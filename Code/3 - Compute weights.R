@@ -204,9 +204,10 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
   iron_cat +
   clinic_level +
   region +
-  vasodilator:rms::pol(age, 2) +  
+  vasodilator:rms::pol(age, 2) +
+  region:rms::pol(age, 2) +
   aki:rms::pol(egfr2021, 2)
-
+  
 # Create IPTW weights on full cohort
 out_weights <- create_weights(
   data = baseline,
@@ -326,6 +327,14 @@ rownames(PS_df) <- c(
   "Västra versus Örebro/Uppsala",
   "Age * vasodilator",
   "Age^2 * vasodoliator",
+  "Age * Other regions",
+  "Age^2 * Other regions",
+  "Age * Sodra",
+  "Age^2 * Sodra",
+  "Age * Stockholm",
+  "Age^2 * Stockholm",
+  "Age * Vastra",
+  "Age^2 * Vastra",
   "eGFR * Acute kidney injury",
   "eGFR^2 * Acute kidney injury"
 )

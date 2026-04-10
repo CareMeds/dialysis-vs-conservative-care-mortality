@@ -14,8 +14,8 @@ setwd(
 results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
 # load libraries
-library(patchwork) # combine figures
 library(data.table)
+library(patchwork) # combine figures
 library(foreach)   # parallel computation
 library(doRNG)     # handle parallel seeds
 set.seed(1)        # set seed for parallel backend
@@ -236,6 +236,7 @@ openxlsx::write.xlsx(
 save(
   id_name,
   listvar,
+  listvar_main,
   catvar,
   contvar,
   non_normal_vars,

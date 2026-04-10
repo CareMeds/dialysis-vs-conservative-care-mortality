@@ -193,12 +193,14 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # extract iron
   esa_iron_ckd_dt <- merged_ckd[LOPNR %in% cohort$LOPNR &
                                   (!is.na(iron_med) |
-                                     !is.na(esa)), c(id_name, "visit_date", "esa", "iron_med", "iron_type"), with = FALSE][, unique(.SD)]
+                                     !is.na(esa)), 
+                                c(id_name, "visit_date", "esa", "iron_med", "iron_type", "crp"), with = FALSE][, unique(.SD)]
   
   # iron from medications dt
   esa_iron_med_dt <- cohort_med[!is.na(esa) |
                                   !is.na(iron_iv) |
-                                  !is.na(iron_po), c(id_name, "visit_date", "esa", "iron_iv", "iron_po"), with = FALSE][, unique(.SD)]
+                                  !is.na(iron_po), 
+                                c(id_name, "visit_date", "esa", "iron_iv", "iron_po"), with = FALSE][, unique(.SD)]
   
   # combine iron_dt from CKD and medications data
   esa_iron_dt <- merge(
@@ -225,11 +227,16 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   
   # add esa and iron to cohort by one year look back for iron
   cohort_esa_iron <- copy(cohort_med)
-  for (var_name in c("esa", "iron_iv", "iron_po")) {
+  for (var_name in c("esa", "iron_iv", "iron_po", "crp")) {
     cohort_esa_iron[, (var_name) := NA_real_]
+    if (var_name == "crp") {
+      dict <- esa_iron_ckd_dt
+    } else{
+      dict <- esa_iron_dt
+    }
     cohort_esa_iron <- retrieve_past_info(
       dt = cohort_esa_iron,
-      dictionary = esa_iron_dt,
+      dictionary = dict,
       id_name = id_name,
       date_name = "visit_date",
       var_name = var_name,
@@ -308,22 +315,14 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Jonkoping"       = "Vastra",
     "Dalarna"         = "Vastra",
     "Gavleborg"       = "Vastra",
-    "Kalmar"          = "Other regions",
-    # "Sydostra",
-    "Ostergotland"    = "Other regions",
-    # "Sydostra",
-    "Gotland"         = "Other regions",
-    # "Sydostra",
-    "Norrbotten"      = "Other regions",
-    # "Norra",
-    "Vasterbotten"    = "Other regions",
-    # "Norra",
-    "Vasternorrland"  = "Other regions",
-    # "Norra",
-    "Jamtland"        = "Other regions",
-    # "Norra",
-    "Ok\xe4nd"        = "Other regions",
-    # meaning Unknown, these are all referred to other disciplines, merge with reference
+    "Kalmar"          = "Other regions", # "Sydostra",
+    "Ostergotland"    = "Other regions", # "Sydostra",
+    "Gotland"         = "Other regions", # "Sydostra",
+    "Norrbotten"      = "Other regions", # "Norra",
+    "Vasterbotten"    = "Other regions", # "Norra",
+    "Vasternorrland"  = "Other regions", # "Norra",
+    "Jamtland"        = "Other regions", # "Norra",
+    "Ok\xe4nd"        = "Other regions", # meaning Unknown, these are all referred to other disciplines, merge with reference
     "Utrikes"         = "Other regions"  # meaning Emigrated, merge with reference
   )
   
@@ -341,10 +340,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Karlshamn",
     "Karlskoga",
     "Koping",
-    "Ljungby",
-    # "Lyckesele",
-    "Lycksele",
-    # new
+    "Ljungby",     # "Lyckesele",
+    "Lycksele",    # new
     "Mora",
     "Motala",
     "Nykoping",
@@ -361,7 +358,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Falkoping",
     "Gbg, Lundby",
     "Trelleborg",
-    "Utrikes"         # emigration merged with local
+    "Utrikes"     # emigration merged with local
   )
   
   # regional clinics
@@ -369,10 +366,8 @@ for (cohort_name in c("cohort", "elig_cohort")) {
     "Boras",
     "Danderyd",
     "Eskilstuna",
-    "Falun",
-    # "Gävle",
-    "Gavle",
-    # new
+    "Falun",    # "Gävle",
+    "Gavle",    # new
     "Halmstad",
     "Helsingborg",
     "Jonkoping",
@@ -395,37 +390,27 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   # academic clinics
   clinic_lev3 <- c(
     # "Gbg SU/Ostra dialysmott",
-    "Gbg SU/Ostra",
-    # new
+    "Gbg SU/Ostra",         # new
     "Gbg, SU/Njurmed",
-    "Gbg, SU/Trpl",
-    # new
+    "Gbg, SU/Trpl",         # new
     "Karolinska Njur med",
     "Linkoping",
-    "Lund Njurmed",
-    # "Malmo, njurmed",
-    "Malmo, Heleneholms",
-    # new
+    "Lund Njurmed",         # "Malmo, njurmed",
+    "Malmo, Heleneholms",   # new
     "Molndal",
     "Uppsala, med",
     "Uppsala, Trpl",
     "Umea",
     "Orebro",
     "Gbg/Ostra",
-    "Huddinge-K Njur med",
-    # "Huddinge-K Njur med (Gammal)",
-    "Huddinge-K, Trpl",
-    # new
+    "Huddinge-K Njur med", # "Huddinge-K Njur med (Gammal)",
+    "Huddinge-K, Trpl",    # new
     "Malmo",
-    "Solna-K Njur med",
-    # "Solna-K Njur med (Gammal)",
-    "Solna, diaverum",
-    # new
-    "Nacka",
-    # dialysis unit, academic
-    "Sodertalje",
-    # dialysis unit, academic
-    "J\xe4rf\xe4lla"    # dialysis unit, academic
+    "Solna-K Njur med",    # "Solna-K Njur med (Gammal)",
+    "Solna, diaverum",     # new
+    "Nacka",               # dialysis unit, academic
+    "Sodertalje",          # dialysis unit, academic
+    "J\xe4rf\xe4lla"       # dialysis unit, academic
   )
   
   # merge and assign clinic levels, infinite look-back
@@ -451,9 +436,12 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   ################################################################################
   # keep only nursing home, i.e., codes starting with 15
   nursing_dt <- outpatient[MVO == "020" |
-                             MVO == "243" | MVO == "246", c(id_name, "INDATUMA"), with = FALSE][, `:=`
-                                                                                                (visit_date = as.IDate(as.character(INDATUMA), format = "%Y%m%d"),
-                                                                                                  nursing_home = 1)][order(visit_date), .SD[1], by = id_name]
+                             MVO == "243" | 
+                             MVO == "246",
+                           c(id_name, "INDATUMA"), 
+                           with = FALSE][, `:=`
+                                         (visit_date = as.IDate(as.character(INDATUMA), format = "%Y%m%d"),
+                                           nursing_home = 1)][order(visit_date), .SD[1], by = id_name]
   
   # merge with cohort
   cohort_geo[, nursing_home := NA_real_]
