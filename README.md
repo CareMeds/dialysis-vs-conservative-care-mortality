@@ -18,10 +18,10 @@
 
 [8]Karolinska University Hospital, Stockholm, Sweden 
 
-## 0 - Data preparation
+## 00 - Data preparation
 This file combines the data files for CKD patients into one, ensuring the right encoding for each variable.
 
-## 1 - Apply eligibility criteria
+## 01 - Apply eligibility criteria
 This file applies the eligibility criteria: 
 1. Estimated glomerular filtration rate (eGFR) <20 mL/min/1.73m² 
 2. Aged ≥65 with a Davies Comorbidity Score* ≥2 or aged ≥80
@@ -32,7 +32,7 @@ This file applies the eligibility criteria:
 
 First, define the time intervals in which patients are eligible. Second, expand the data table for each day within the time interval. Third, if the decision falls on an eligible date, include patient in cohort. 
 
-## 2 - Covariate and outcome derivation
+## 02 - Covariate and outcome derivation
 Obtain information on 
 1. Other comorbidities from inpatient and outpatient files
 2. Number of hospitalizations from inpatient file
@@ -44,7 +44,7 @@ Obtain information on
 8. Nursing home information from outpatient file
 9. Outcomes (e.g., all-cause mortality) from death file
 
-## 3 - Compute weights
+## 03 - Compute weights
 Propensity score (PS) model
 1. Fit PS model
 2. Check if the coefficients of the PS model is not too extreme
@@ -67,14 +67,14 @@ Describe weights
 2. IPTW: check if SMD below 0.1 for all confounders
 3. Generalizibility: check if TASMD below 0.1, comparing those with recorded treatment decision versus all eligible patients
 
-## 4 - Descriptives
+## 04 - Descriptives
 1. Make a histogram of time until dialysis
 2. Make a Table describing patient characteristics for the entire eligible cohort before and after selection weighting
 3. Make a Table describing patient characteristics for the entire eligible cohort before and after treatment weighting
 4. Create love plots if SMD and TASMD below 0.1 after weighting
 5. Summarize the number of decisions
 
-## 5 - ATE
+## 05 - ATE
 Compute average treatment effects
 1. Risks (i.e., Kaplan-Meier estimates)
 2. Risk difference
@@ -83,20 +83,23 @@ Compute average treatment effects
 5. Difference in RMST
 6. Hazard ratio
 
-## 6 - Continuous HTE
+## 06 - Continuous HTE
 1. Fit a risk model using age, eGFR, malignancies, diabetes mellitus, ischemic heart disease, valvular heart disase, peripheral vascular disease, sex, and albumin.
 2. Predict risk of mortality for each individual.
 3. Fit a model with the outcome all-cause moratality, and predictors treatment, predicted mortality risk, and its interaction.
 4. For every level of predicted mortality risk, estimate risk difference, difference in RMST, and hazard ratio.
 
-## 7 - SA positivity
+## 07 - Example Supplemental Methods
+Calculation of individualized treatment of an example patient in Supplemental Materials 1.
+
+## 08 - SA positivity
 Compare estimates of average treatment effect when applying overlap weighting, Crump trimming, Sturmer traimming, or Walker trimming.
 
-## 8 - Competing risk time-to-dialysis
+## 09 - Competing risk time-to-dialysis
 Some patients choosing dialysis do not immediately initiate dialysis. To estimate how much time patients spend in dialysis state in the two years following their decision. For those choosing dialysis, we fit a multi-state illness-death model with the states "Alive without dialysis", "Dialysis", and "Death".
-
-## 9 - Example Supplemental Methods
-Calculation of individualized treatment of an example patient in Supplemental Materials 1.
 
 ## 10 - SA unmeasured confounding
 Sensitivity analysis investigating unmeasured confounding using 1) simple bias analysis; 2) E-value; 3) quantitative bias analysis.
+
+## 11 - Supplemental Figure HTE
+This file creates a Figure that illustrates the mathematical relationship between absolute and relative HTE.
