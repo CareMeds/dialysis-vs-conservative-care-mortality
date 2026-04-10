@@ -476,42 +476,13 @@ fmt_ci <- function(estimate, lower, upper, digits = 1) {
          ")")
 }
 
-# Create a table for the number of vascular access surgeries and number of decisions
-summarize_binary_vars <- function(data, group_var, vars, labels = vars) {
-  g <- data[[group_var]]
+# Calculate Required P_C0
+calc_p0 <- function(rr, p1) {
+  num <- p1 * (rr - 1) + 1 - bias_factor
+  den <- bias_factor * (rr - 1)
+  p0 <- num / den
   
-  # Group labels
-  group_names <- c("Dialysis", "Conservative Care")
-  groups <- c(1, 0)
-  
-  # First row: sample sizes
-  out <- data.frame(
-    Variable = "Sample size",
-    Overall = nrow(data),
-    Dialysis = sum(g == 1),
-    `Conservative Care` = sum(g == 0),
-    stringsAsFactors = FALSE
-  )
-  
-  # Add binary variable summaries
-  for (i in seq_along(vars)) {
-    v <- data[[vars[i]]]
-    
-    overall_n <- sum(v == 1, na.rm = TRUE)
-    overall_pct <- round(overall_n / nrow(data) * 100, 1)
-    overall <- sprintf("%d (%.1f%%)", overall_n, overall_pct)
-    
-    dialysis_n <- sum(v[g == 1] == 1, na.rm = TRUE)
-    dialysis_pct <- round(dialysis_n / sum(g == 1) * 100, 1)
-    dialysis <- sprintf("%d (%.1f%%)", dialysis_n, dialysis_pct)
-    
-    cc_n <- sum(v[g == 0] == 1, na.rm = TRUE)
-    cc_pct <- round(cc_n / sum(g == 0) * 100, 1)
-    cc <- sprintf("%d (%.1f%%)", cc_n, cc_pct)
-    
-    out[nrow(out) + 1, ] <- c(labels[i], overall, dialysis, cc)
-  }
-  
-  rownames(out) <- NULL
-  return(out)
+  # Ensure P_C0 stays within probability bounds [0, 1]
+  p0[p0 < 0 | p0 > 1] <- NA
+  return(p0)
 }

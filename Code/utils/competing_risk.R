@@ -24,10 +24,16 @@ state_probabilities <- function(dt, horizon){
   # transition matrix
   tmat <- mstate::trans.illdeath(c("Decision","KRT","Death"))
   
+  # set status and time at horizon
+  dt[, KRT_event := fifelse(time2event_KRT_inf <= horizon, event_KRT_inf, 0)]
+  dt[, KRT_time := fifelse(time2event_KRT_inf <= horizon, time2event_KRT_inf, horizon)]
+  dt[, death_event := fifelse(time2event_death_inf <= horizon, event_death_inf, 0)]
+  dt[, death_time := fifelse(time2event_death_inf <= horizon, time2event_death_inf, horizon)]
+  
   # prepare data for competing risk model
   msdia <- mstate::msprep(
-    time = c(NA, "time2event_KRT_2y", "time2event_death_2y"),
-    status = c(NA, "event_KRT_2y", "event_death_2y"),
+    time = c(NA, "KRT_time", "death_time"),
+    status = c(NA, "KRT_event", "death_event"),
     data = dt,
     trans = tmat,
     keep = "sw_IPTW"

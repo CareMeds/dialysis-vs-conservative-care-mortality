@@ -330,3 +330,41 @@ calculate_smd <- function(vec1, vec2, w1 = NULL, w2 = NULL) {
   
   return(smd)
 }
+
+risk_model_table <- function(model_cox,
+                                  predictor_labels,
+                                  horizon,
+                                  digits = 2) {
+  # ── Validate labels match model terms ───────────────────────────────────────
+  model_terms <- broom::tidy(model_cox) |> dplyr::pull(term)
+  
+  # ── Coefficient and HR table ────────────────────────────────────────────────
+  predictor_rows <- dplyr::left_join(
+    broom::tidy(model_cox, exponentiate = FALSE, conf.int = TRUE),
+    broom::tidy(model_cox, exponentiate = TRUE,  conf.int = TRUE),
+    by     = "term",
+    suffix = c("_log", "_hr")
+  ) |>
+    dplyr::mutate(
+      Predictor = predictor_labels,
+      coef_CI   = fmt_ci(estimate_log, conf.low_log, conf.high_log, digits = digits),
+      HR_CI     = fmt_ci(estimate_hr,  conf.low_hr,  conf.high_hr,  digits = digits),
+      Wald      = fmt(statistic_log^2)  # z² = Wald chi-square (1 df)
+    ) |>
+    dplyr::select(Predictor, coef_CI, HR_CI, Wald)
+  
+  # ── Baseline hazard at horizon ──────────────────────────────────────────────
+  bh <- suppressWarnings(survival::basehaz(model_cox))
+  h0 <- bh$hazard[bh$time == horizon]
+  
+  baseline_row <- data.frame(
+    Predictor = paste0("Baseline hazard at ", horizon, " years"),
+    coef_CI   = sprintf("%.*f", digits, h0),
+    HR_CI     = "",
+    Wald      = ""
+  )
+  
+  risk_model_table <- rbind(baseline_row, predictor_rows)
+  
+  return(list(h0 = h0, coef = coefficients(model_cox), centers = model_cox$means, risk_model_table = risk_model_table))
+}

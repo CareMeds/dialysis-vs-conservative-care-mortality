@@ -363,10 +363,10 @@ create_forest_plot_all_measures <- function(dt,
         x = 1,
         label = ifelse(
           measure == "RD",
-          "2-year RD,\n% (95% CI)",
+          "2-year RD\n% (95% CI)",
           ifelse(
             measure == "dRMST",
-            "2-year \u0394RMST,\nmonths (95% CI)",
+            "2-year \u0394RMST\nmonths (95% CI)",
             "2-year HR\n(95% CI)"
           )
         ),
@@ -461,7 +461,17 @@ create_forest_plot_all_measures <- function(dt,
       ggplot2::geom_point(ggplot2::aes(x = .data[[measure]]),
                           shape = 15,
                           size = 2) +
-      ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data[[paste0(measure, "_lower")]], xmax = .data[[paste0(measure, "_upper")]]), height = 0) +
+      # ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data[[paste0(measure, "_lower")]], 
+      #                                      xmax = .data[[paste0(measure, "_upper")]]), height = 0) +
+      ggplot2::geom_errorbar(
+        ggplot2::aes(
+          xmin = .data[[paste0(measure, "_lower")]], 
+          xmax = .data[[paste0(measure, "_upper")]],
+          y = analysis_name
+        ),
+        width = 0,
+        orientation = "y"
+      ) + 
       ggplot2::geom_vline(
         xintercept = center,
         linetype = "dashed",
@@ -538,24 +548,33 @@ get_metric_positions <- function(n) {
 effect_plot <- function(estimates_df,
                         y_middle,
                         measure,
+                        y_min_RD = -70,
                         y_max_RD,
+                        y_min_RR = -1,
+                        y_max_RR,
                         y_min_dRMST,
+                        y_max_dRMST = 10,
+                        y_min_HR = 0,
                         y_max_HR) {
   # add padding on y-axis
-  padding_y <- ifelse(measure == "HR", 0.1, ifelse(measure == "RD", 5, 1))
+  padding_y <- ifelse(measure == "HR" | measure == "RR", 0.1, ifelse(measure == "RD", 5, 1))
   
   # Define y-axis breaks based on measure
   if (measure == "HR") {
-    y_min <- 0
+    y_min <- y_min_HR
     y_max <- y_max_HR
     y_breaks <- sort(c(seq(y_min, y_max, by = 0.2), y_middle))
   } else if (measure == "RD") {
-    y_min <- -70
+    y_min <- y_min_RD
     y_max <- y_max_RD
     y_breaks <- sort(c(seq(y_min, y_max, by = 10), y_middle))
+  } else if (measure == "RR") {
+    y_min <- y_min_RR
+    y_max <- y_max_RR
+    y_breaks <- sort(c(seq(y_min, y_max, by = 0.2), y_middle))
   } else {
     y_min <- y_min_dRMST
-    y_max <- 10
+    y_max <- y_max_dRMST
     y_breaks <- sort(c(seq(y_min, y_max, by = 1), y_middle))
   }
   
@@ -583,8 +602,9 @@ effect_plot <- function(estimates_df,
                   y = ifelse(
                     measure == "RD",
                     "Risk difference in %",
-                    ifelse(measure == "dRMST", "\u0394RMST in months", "Hazard ratio")
-                  )) +
+                    ifelse(measure == "dRMST", "\u0394RMST in months", 
+                           ifelse(measure == "RR", "Risk ratio", "Hazard ratio")
+                  ))) +
     ggplot2::theme_minimal() +
     ggplot2::theme(
       panel.grid = ggplot2::element_blank(),

@@ -52,7 +52,7 @@ compute_estimates_with_CI <- function(data,
     contvar = contvar,
     n_bootstraps = n_bootstraps,
     bootstrap_seed = bootstrap_seed
-  ) 
+  )
   
   # compute 95% CI at horizon
   est_CI <- est_CI_full |>
@@ -118,7 +118,7 @@ compute_risk_at_multiple_times <- function(data,
                                            catvar,
                                            contvar) {
   ### Trimming #################################################################
-  if (trim_meth!="no_trimming") {
+  if (trim_meth != "no_trimming") {
     data <- trim_propensity_scores(
       data = data,
       trt_var = trt_var,
@@ -203,13 +203,13 @@ compute_risk_at_multiple_times <- function(data,
       R1 = R1,
       R0 = R0,
       RD = R1 - R0,
-      RR = R1 / R0,
+      RR = ifelse(R0 == 0, 0, R1 / R0), # DISCUSS: R1 / R0,
       RMST0 = cumsum(1 - R0),
       RMST1 = cumsum(1 - R1),
       dRMST = RMST1 - RMST0,
       HR = HR
-    ) 
-    # dplyr::filter(time %in% horizon)
+    )
+  # dplyr::filter(time %in% horizon)
   
   # If RR is undefined, set to zero
   dat.table[is.na(dat.table$RR), "RR"] <- 0
@@ -345,18 +345,187 @@ compute_CI_at_multiple_times <- function(data,
                                          contvar,
                                          n_bootstraps,
                                          bootstrap_seed = 123) {
-  # Define columns to check
   cols_to_check <- c("R0", "R1", "RD", "RR", "RMST0", "RMST1", "dRMST", "HR")
   
+  num_cores <- parallel::detectCores() - 1
+  cl <- parallel::makeCluster(num_cores)
+  doParallel::registerDoParallel(cl)
+  registerDoRNG(seed = bootstrap_seed)
+  
+  bootsamps <- foreach::foreach(
+    boot = 1:n_bootstraps,
+    .packages = c("dplyr", "data.table"),
+    .export = c(
+      "filter_terms_from_formula",
+      "create_weights",
+      "trim_propensity_scores",
+      "compute_risk_at_multiple_times",
+      "compute_absolute_risk_at_multiple_times"
+    )
+  ) %dorng% {
+    tryCatch({
+      d <- sample(1:nrow(data), size = nrow(data), replace = TRUE)
+      ds_b <- setDT(data[d, ])
+      
+      output <- compute_risk_at_multiple_times(
+        data = ds_b,
+        horizon = horizon,
+        elig_cohort = elig_cohort,
+        model_PS = model_PS,
+        model_S = model_S,
+        event_var = event_var,
+        competing_event_var = competing_event_var,
+        time2event_var = time2event_var,
+        trt_var = trt_var,
+        w_meth = w_meth,
+        trim_meth = trim_meth,
+        catvar = catvar,
+        contvar = contvar
+      )
+      
+      # --- NEW: Identify exactly which columns and rows have non-finite values ---
+      invalid_detail <- output |>
+        dplyr::mutate(row_index = dplyr::row_number()) |>
+        tidyr::pivot_longer(
+          cols = dplyr::all_of(cols_to_check),
+          names_to = "column",
+          values_to = "value"
+        ) |>
+        dplyr::filter(!is.finite(value)) |>
+        dplyr::select(row_index, time, column, value)
+      
+      if (nrow(invalid_detail) > 0) {
+        return(list(
+          error = sprintf(
+            "Boot %d: Non-finite values in %d cell(s) across column(s): %s",
+            boot,
+            nrow(invalid_detail),
+            paste(unique(invalid_detail$column), collapse = ", ")
+          ),
+          invalid_cells = invalid_detail,   # exact rows/cols that are bad
+          output = output                   # full output for inspection
+        ))
+      }
+      
+      # Tag successful bootstraps with their index for traceability
+      output$boot_id <- boot
+      output
+      
+    }, error = function(e) {
+      return(list(
+        error = paste0("Boot ", boot, " crashed: ", e$message),
+        invalid_cells = NULL,
+        output = NULL
+      ))
+    })
+  }
+  
+  parallel::stopCluster(cl)
+  registerDoSEQ()
+  
+  ##############################################################################
+  ### Error reporting — now with per-column NA summaries and partial output
+  ##############################################################################
+  errors   <- Filter(function(x)  "error" %in% names(x), bootsamps)
+  successes <- Filter(function(x) !"error" %in% names(x), bootsamps)
+  
+  n_failed  <- length(errors)
+  n_total   <- n_bootstraps
+  
+  if (n_failed > 0) {
+    message(sprintf("\n--- Bootstrap Failure Report: %d / %d failed ---", n_failed, n_total))
+    
+    for (err in errors) {
+      message("\n", err$error)
+      
+      # Print per-column breakdown of non-finite values if available
+      if (!is.null(err$invalid_cells) && nrow(err$invalid_cells) > 0) {
+        message("  Non-finite breakdown by column:")
+        col_summary <- err$invalid_cells |>
+          dplyr::group_by(column) |>
+          dplyr::summarise(
+            n_bad_rows   = dplyr::n(),
+            bad_at_times = paste(sort(unique(time)), collapse = ", "),
+            value_types  = paste(unique(
+              dplyr::case_when(
+                is.nan(value) ~ "NaN",
+                is.infinite(value) ~ ifelse(value > 0, "Inf", "-Inf"),
+                is.na(value) ~ "NA"
+              )
+            ), collapse = ", "),
+            .groups = "drop"
+          )
+        print(as.data.frame(col_summary), row.names = FALSE)
+        
+        message("  Full output from this bootstrap:")
+        print(as.data.frame(err$output))
+      }
+    }
+    
+    # Aggregated summary across all failures
+    message("\n--- Aggregated column failure counts across all failed bootstraps ---")
+    all_invalid_cells <- dplyr::bind_rows(lapply(errors, `[[`, "invalid_cells"))
+    if (nrow(all_invalid_cells) > 0) {
+      agg_summary <- all_invalid_cells |>
+        dplyr::group_by(column) |>
+        dplyr::summarise(
+          total_bad_cells = dplyr::n(),
+          n_boots_affected = dplyr::n_distinct(..1),  # time used as proxy; see note
+          .groups = "drop"
+        ) |>
+        dplyr::arrange(dplyr::desc(total_bad_cells))
+      print(as.data.frame(agg_summary), row.names = FALSE)
+    }
+  }
+  
+  ##############################################################################
+  ### Combine successes and compute CIs
+  ##############################################################################
+  totalboot <- dplyr::bind_rows(successes) |>
+    dplyr::arrange(time)
+  
+  totalboot <- totalboot[!is.na(totalboot$time), ]
+  
+  totalboot <- totalboot |>
+    dplyr::group_by(time) |>
+    dplyr::reframe(dplyr::across(
+      .cols = dplyr::all_of(cols_to_check),
+      ~ quantile(.x, probs = c(0.025, 0.975), na.rm = TRUE)
+    ),
+    name = c("conf.low", "conf.high")) |>
+    dplyr::ungroup()
+  
+  return(totalboot)
+}
+
+compute_CI_at_multiple_times <- function(data,
+                                         horizon,
+                                         elig_cohort,
+                                         model_PS,
+                                         model_S = NULL,
+                                         event_var,
+                                         competing_event_var,
+                                         time2event_var,
+                                         trt_var,
+                                         w_meth,
+                                         weights_meth,
+                                         trim_meth = "no_trimming",
+                                         catvar,
+                                         contvar,
+                                         n_bootstraps,
+                                         bootstrap_seed = 123) {
+  # Define columns to check
+  cols_to_check <- c("R0", "R1", "RD", "RR", "RMST0", "RMST1", "dRMST", "HR")
+
   # 1. Register a parallel backend
   num_cores <- parallel::detectCores() - 1
   cl <- parallel::makeCluster(num_cores)
   doParallel::registerDoParallel(cl)
-  
+
   # 2. SET THE SEED (Crucial for doRNG)
   # This ensures every bootstrap sample is reproducible
   registerDoRNG(seed = bootstrap_seed)
-  
+
   # 3. Execute the bootstrap loop
   # Creates bootsamples and runs the model to each sample
   # perform in parallel
@@ -376,10 +545,10 @@ compute_CI_at_multiple_times <- function(data,
       d <- sample(1:nrow(data),
                   size = nrow(data),
                   replace = T)
-      
+
       # select patients
       ds_b <- setDT(data[d, ])
-      
+
       # Compute absolute risks in weighted subpopulation
       output <- compute_risk_at_multiple_times(
         data = ds_b,
@@ -396,74 +565,123 @@ compute_CI_at_multiple_times <- function(data,
         catvar = catvar,
         contvar = contvar
       )
+
+      # Identify exactly which columns and rows have non-finite values ---
+      invalid_detail <- output |>
+        dplyr::mutate(row_index = dplyr::row_number()) |>
+        tidyr::pivot_longer(
+          cols = dplyr::all_of(cols_to_check),
+          names_to = "column",
+          values_to = "value"
+        ) |>
+        dplyr::filter(!is.finite(value)) |>
+        dplyr::select(row_index, time, column, value)
       
-      # Check for non-finite values (NA, NaN, Inf) across all existing key columns
-      # We use 'any(!is.finite(.))' inside 'summarise' to get a logical check
-      is_invalid <- output |>
-        dplyr::summarise(dplyr::across(dplyr::all_of(cols_to_check), ~ any(!is.finite(.x)))) |>
-        any()
-      if (is_invalid) {
-        return(list(error = "Calculation produced non-finite values (NA, NaN, or Inf)."))
+      if (nrow(invalid_detail) > 0) {
+        return(list(
+          error = sprintf(
+            "Boot %d: Non-finite values in %d cell(s) across column(s): %s",
+            boot,
+            nrow(invalid_detail),
+            paste(unique(invalid_detail$column), collapse = ", ")
+          ),
+          invalid_cells = invalid_detail,   # exact rows/cols that are bad
+          output = output                   # full output for inspection
+        ))
       }
       
-      # Return the clean dplyr table of estimates at multiple time points
+      # Tag successful bootstraps with their index for traceability
+      output$boot_id <- boot
       output
       
     }, error = function(e) {
-      # This captures the actual R error message
-      return(list(error = paste0("Error in boot ", boot, ": ", e$message)))
+      return(list(
+        error = paste0("Boot ", boot, " crashed: ", e$message),
+        invalid_cells = NULL,
+        output = NULL
+      ))
     })
   }
-  
+
   # 4. Stop the parallel backend and clean up
   parallel::stopCluster(cl)
   registerDoSEQ() # Returns R to sequential processing mode
-  
+
   ##############################################################################
   ### Error reporting
   ##############################################################################
   # Separate the successes from the errors
-  errors <- Filter(function(x)
-    "error" %in% names(x), bootsamps)
-  successes <- Filter(function(x)
-    ! "error" %in% names(x), bootsamps)
+  errors <- Filter(function(x) "error" %in% names(x), bootsamps)
+  successes <- Filter(function(x) !"error" %in% names(x), bootsamps)
+
+  n_failed  <- length(errors)
+  n_total   <- n_bootstraps
   
-  # Print Detailed Report
-  n_failed <- length(errors)
   if (n_failed > 0) {
-    message(sprintf(
-      "Warning: %d of %d bootstraps failed.",
-      n_failed,
-      n_bootstraps
-    ))
+    message(sprintf("\n--- Bootstrap Failure Report: %d / %d failed ---", n_failed, n_total))
     
-    # Group and count unique error messages
-    error_summary <- table(sapply(errors, `[[`, "error"))
-    print(error_summary)
+    for (err in errors) {
+      message("\n", err$error)
+      
+      # Print per-column breakdown of non-finite values if available
+      if (!is.null(err$invalid_cells) && nrow(err$invalid_cells) > 0) {
+        message("  Non-finite breakdown by column:")
+        col_summary <- err$invalid_cells |>
+          dplyr::group_by(column) |>
+          dplyr::summarise(
+            n_bad_rows   = dplyr::n(),
+            bad_at_times = paste(sort(unique(time)), collapse = ", "),
+            value_types  = paste(unique(
+              dplyr::case_when(
+                is.nan(value) ~ "NaN",
+                is.infinite(value) ~ ifelse(value > 0, "Inf", "-Inf"),
+                is.na(value) ~ "NA"
+              )
+            ), collapse = ", "),
+            .groups = "drop"
+          )
+        print(as.data.frame(col_summary), row.names = FALSE)
+        
+        message("  Full output from this bootstrap:")
+        print(as.data.frame(err$output))
+      }
+    }
+    
+    # Aggregated summary across all failures
+    message("\n--- Aggregated column failure counts across all failed bootstraps ---")
+    all_invalid_cells <- dplyr::bind_rows(lapply(errors, `[[`, "invalid_cells"))
+    if (nrow(all_invalid_cells) > 0) {
+      agg_summary <- all_invalid_cells |>
+        dplyr::group_by(column) |>
+        dplyr::summarise(
+          total_bad_cells = dplyr::n(),
+          .groups = "drop"
+        ) |>
+        dplyr::arrange(dplyr::desc(total_bad_cells))
+      print(as.data.frame(agg_summary), row.names = FALSE)
+    }
   }
-  
-  # Get dataframe of bootstrap results at multiple time points
-  totalboot <- dplyr::bind_rows(bootsamps) |>
+
+  ##############################################################################
+  ### Combine successes and compute CIs
+  ##############################################################################
+  totalboot <- dplyr::bind_rows(successes) |>
     dplyr::arrange(time)
-  
-  # remove failed bootstraps
-  totalboot <- totalboot[!is.na(totalboot$time),]
-  
+
   # Calculate confidence intervals at multiple time points
   totalboot <- totalboot |>
     dplyr::group_by(time) |>
-    dplyr::reframe(dplyr::across(.cols = dplyr::all_of(cols_to_check), ~ quantile(
-      .x, probs = c(0.025, 0.975), na.rm = TRUE
-    )),
+    dplyr::reframe(dplyr::across(
+      .cols = dplyr::all_of(cols_to_check),
+      ~ quantile(.x, probs = c(0.025, 0.975), na.rm = TRUE)
+    ),
     name = c("conf.low", "conf.high")) |>
     dplyr::ungroup()
-  
+
   return(totalboot)
 }
 
-compute_measures <- function(risk_model, 
-                             data,
-                             plot = FALSE) {
+compute_measures <- function(risk_model, data, plot = FALSE) {
   # psuedovalues
   Score <- riskRegression::Score(
     object = list("model" = risk_model),
@@ -507,7 +725,7 @@ compute_measures <- function(risk_model,
   Slope <- 1 + summary(fit_cal_slope)$mean["cll_pred", ]$estimate
   
   # smooth pseudo values for calibration plot
-  if (plot){
+  if (plot) {
     smooth_pseudos <- predict(stats::loess(
       pseudovalue ~ risk,
       data = pseudos,
@@ -531,19 +749,30 @@ compute_measures <- function(risk_model,
 }
 
 compute_HTE <- function(data,
+                        unit = "months",
                         horizon,
+                        event_var,
+                        time2event_var,
                         effect_modifier = "lp_risk",
                         effect_modifier_range,
-                        print_test_HTE = FALSE) {
+                        add_interaction = TRUE,
+                        test_absolute_HTE = TRUE,
+                        test_relative_HTE = TRUE) {
   # 0. Set formula
   data <- copy(data)
-  data[, effect_modifier := get(effect_modifier)]
-  data[, trt := as.numeric(trt) - 1]
+  data[, `:=`
+       (
+         effect_modifier = get(effect_modifier),
+         trt = as.numeric(trt) - 1,
+         time = get(time2event_var),
+         event = get(event_var)
+       )]
   
   # 1. Fit model using rms (ensures rcs is handled correctly)
-  fit <- survival::coxph(
-    survival::Surv(time2event_death_2y, event_death_2y) ~
-      trt * effect_modifier,
+  out <- paste0("survival::Surv(", time2event_var, ", ", event_var, ") ~ trt")
+  benefit_magnification <- as.formula(paste0(out, " + effect_modifier"))
+  fit_effect_modification <- survival::coxph(
+    as.formula(paste0(out, " * effect_modifier")),
     data = data,
     weights = data$sw_IPTW,
     robust = TRUE,
@@ -551,25 +780,30 @@ compute_HTE <- function(data,
     y = TRUE
   )
   
-  if (print_test_HTE) {
-    cat(" BIC:",
-        BIC(fit),
-        "\n",
-        "Test for HTE p-value = ",
-        summary(fit)$coefficients[3, "Pr(>|z|)"],
-        "\n")
+  # select model to compute measures for
+  if (add_interaction) {
+    fit <- fit_effect_modification
+  } else {
+    fit <- survival::coxph(
+      benefit_magnification,
+      data = data,
+      weights = data$sw_IPTW,
+      robust = TRUE,
+      x = TRUE,
+      y = TRUE
+    )
   }
   
   # 2. Define prediction grid
   pred_grid_0 <- data.frame(
     trt = 0,
-    effect_modifier = effect_modifier_range,
-    `trt*effect_modifier` = 0
+    effect_modifier = effect_modifier_range
+    # `trt*effect_modifier` = 0
   )
   pred_grid_1 <- data.frame(
     trt = 1,
-    effect_modifier = effect_modifier_range,
-    `trt*effect_modifier` = effect_modifier_range
+    effect_modifier = effect_modifier_range
+    # `trt*effect_modifier` = effect_modifier_range
   )
   
   # 3. Generate Survival Objects
@@ -587,8 +821,15 @@ compute_HTE <- function(data,
   s1_tab <- summary(sf_1, rmean = horizon)$table
   
   # Handle potential column naming variance (*rmean vs rmean)
-  RMST_0 <- as.numeric(s0_tab[, "rmean"]) / 30.5
-  RMST_1 <- as.numeric(s1_tab[, "rmean"]) / 30.5
+  if (unit == "years") {
+    div.fact <- 365.25
+  } else if (unit == "months") {
+    div.fact <- 30.5
+  } else if (unit == "days") {
+    div.fact <- 1
+  }
+  RMST_0 <- as.numeric(s0_tab[, "rmean"]) / div.fact
+  RMST_1 <- as.numeric(s1_tab[, "rmean"]) / div.fact
   
   # 6. Hazard Ratio (HR)
   # For interaction models with splines, it is safest to predict the
@@ -597,6 +838,13 @@ compute_HTE <- function(data,
   lp_1 <- predict(fit, newdata = pred_grid_1, type = "lp")
   HR   <- exp(lp_1 - lp_0)
   
+  # Print tests
+  if (test_relative_HTE) {
+    p_for_HTE <- summary(fit_effect_modification)$coefficients["trt:effect_modifier", "Pr(>|z|)"]
+  } else {
+    p_for_HTE <- NA
+  }
+  
   # 7. Consolidate results
   return(
     data.frame(
@@ -604,8 +852,10 @@ compute_HTE <- function(data,
       risk_0 = risk_0,
       risk_1 = risk_1,
       RD     = (risk_1 - risk_0) * 100,
+      RR     = risk_1 / risk_0,
       dRMST  = RMST_1 - RMST_0,
-      HR     = HR
+      HR     = HR,
+      p_for_HTE = p_for_HTE
     )
   )
 }
