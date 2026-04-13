@@ -111,13 +111,15 @@ time_hist_zoomed <- time_hist +
     plot.tag = ggplot2::element_text(face = "bold"),
     plot.title = ggplot2::element_text(hjust = 0.5)
   )
-ggplot2::ggsave(
+
+# suppress warnings produced by zoomed histogram
+suppressWarnings(ggplot2::ggsave(
   plot = time_hist / time_hist_zoomed,
   filename = paste0(results_path, "Supplemental/Figure_S4.png"),
   width = 10,
   height = 8,
   dpi = 300
-)
+))
 
 ################################################################################
 ### Baseline characteristics for full eligibility cohort and cohort after weighting
@@ -172,6 +174,7 @@ row_labels <- c(
   "Phosphorus (mmol/L) [mean, SD]",
   "Albumin (g/L) [mean, SD]",
   "Haemoglobin (mmol/L) [mean, SD]",
+  "C-reactive protein",
   "Primary kidney disease (%)",
   "Diabetic nephropathy",
   "Hypertension",
@@ -362,6 +365,7 @@ varnames <- c(
   "Phosphorus",
   "Albumin",
   "Haemoglobin",
+  "C-reactive protein",
   "Primary kidney disease",
   "Malignancy",
   "Ischemic heart disease",

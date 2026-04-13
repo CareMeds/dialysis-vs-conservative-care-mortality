@@ -134,7 +134,7 @@ for (B in seq_len(n_iter)) {
     boot_trt_dec <- baseline
   } else {
     boot_elig    <- elig_cohort[sample(nrow(elig_cohort), replace = TRUE), ]
-    boot_trt_dec <- baseline[sample(nrow(baseline),      replace = TRUE), ]
+    boot_trt_dec <- baseline[sample(nrow(baseline),       replace = TRUE), ]
   }
   
   # 2. Fit risk model on bootstrap sample ---------------------------------
@@ -148,9 +148,11 @@ for (B in seq_len(n_iter)) {
   )
   
   # 3. Evaluate on original sample (apparent for B=1, optimism for B>1) --
-  elig_orig <- compute_measures(boot_risk_model, data = elig_cohort,
+  elig_orig <- compute_measures(boot_risk_model,
+                                data = elig_cohort,
                                 plot = is_original)
-  trt_orig  <- compute_measures(boot_risk_model, data = baseline,
+  trt_orig  <- compute_measures(boot_risk_model,
+                                data = baseline,
                                 plot = is_original)
   
   if (is_original) {

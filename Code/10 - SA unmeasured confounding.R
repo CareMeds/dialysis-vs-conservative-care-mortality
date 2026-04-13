@@ -33,6 +33,7 @@ load("Data/cohort_with_prob.Rdata")
 ################################################################################
 ### Perform sensitivity analysis at three landmark points
 ################################################################################
+n_bootstraps <- 2
 # extract risks at one, three, and six months
 landmarks <- c(30, 90, 183)
 bf_dt <- data.frame(
@@ -108,10 +109,20 @@ for (B in 1:(n_bootstraps + 1)) {
     initiated_patients <- bootstrap[(initiated)]
     N_initiated <- nrow(initiated_patients)
     
+    # obtain weights P(intiatiated before or at landmark)
+    dialysis_df <- bootstrap[trt == 1, ]
+    model_initiated <- glm(
+      update(model_PS, "initiated ~ ."),
+      family = stats::binomial(),
+      data = dialysis_df
+    )
+    dialysis_df$w_initiated <- 1 / predict(model_initiated, newdata = dialysis_df, type = "response")
+    initiated_patients$w_initiated <- 1 / predict(model_initiated, newdata = initiated_patients, type = "response")
+    
     # describe patients who initiated and those who did not
     if (B == 1) {
       table_one <- create_baseline_table(
-        data = bootstrap,
+        data = dialysis_df,
         id_name = "LOPNR",
         vars = listvar,
         categoricalVars = catvar,
@@ -131,15 +142,29 @@ for (B in 1:(n_bootstraps + 1)) {
           ".xlsx"
         )
       )
+      table_one_weighted <- create_baseline_table(
+        data = dialysis_df,
+        weights = dialysis_df$sw_IPTW * dialysis_df$w_initiated,
+        id_name = "LOPNR",
+        vars = listvar,
+        categoricalVars = catvar,
+        IQRVars = non_normal_vars,
+        treatmentColumn = "initiated",
+        treatmentLabel = "Initiated",
+        controlLabel = "Not initiated",
+        tableCaption = paste0("Stratified by initiation at landmark", landmark)
+      )
+      openxlsx::write.xlsx(
+        table_one_weighted$raw_table,
+        rowNames = TRUE,
+        file = paste0(
+          results_path,
+          "Other/Descriptives_initiated_at_landmark_",
+          landmark,
+          "_weighted.xlsx"
+        )
+      )
     }
-    
-    # obtain weights P(intiatiated before or at landmark)
-    model_initiated <- glm(update(model_PS, "initiated ~ ."),
-        family = stats::binomial(),
-        data = bootstrap)
-    initiated_patients$w_initiated <- 1 / predict(model_initiated, 
-                                                  newdata = initiated_patients, 
-                                                  type = "response")
     
     # 4.3 obtain survival probability at landmark
     KM_initiated <- survival::survfit(
@@ -447,10 +472,14 @@ for (B in 1:(n_bootstraps + 1)) {
         RR_unconfounded = sprintf("%.2f", RR_unconfounded),
         RR_CD = rr_seq,
         P_C0 = paste0(p0_seq * 100, "%"),
-        P_C1 = paste0(ifelse(p1_required < 0, "Impossible (", ""), 
-                      paste0(sprintf("%.1f", p1_required * 100), "%"),
-                      ifelse(p1_required < 0, ")", "")),
-        Prevalence_gap = ifelse(p1_required < 0, "", paste0(sprintf("%.1f", prevalence_gap), "%"))
+        P_C1 = paste0(
+          ifelse(p1_required < 0, "Impossible (", ""),
+          paste0(sprintf("%.1f", p1_required * 100), "%"),
+          ifelse(p1_required < 0, ")", "")
+        ),
+        Prevalence_gap = ifelse(p1_required < 0, "", paste0(
+          sprintf("%.1f", prevalence_gap), "%"
+        ))
       )
       QBA_examples <- rbind(QBA_examples, QBA_example)
     }

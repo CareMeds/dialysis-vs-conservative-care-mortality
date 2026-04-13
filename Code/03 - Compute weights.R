@@ -87,6 +87,7 @@ listvar <- c(
   "phosphate",
   "albumin",
   "hb",
+  "crp",
   "prd_cat",
   "cancer",
   "ihd",
@@ -137,6 +138,7 @@ contvar <- c(
   "phosphate",
   "albumin",
   "hb",
+  "crp",
   "n_hospital",
   "n_cvd_hospital"
 )
@@ -165,6 +167,7 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
   phosphate +
   albumin +
   hb +
+  log(crp + 1) + 
   prd_cat +
   cancer +
   ihd +
@@ -280,6 +283,7 @@ rownames(PS_df) <- c(
   "Phosphorus, mmol/L",
   "Albumin, g/L",
   "Haemoglobin , mmol/L",
+  "C-reactive protein",
   "Primary kidney disease hypertension versus diabetic nephropathy",
   "Primary kidney disease other versus diabetic nephropathy",
   "Malignancy",
