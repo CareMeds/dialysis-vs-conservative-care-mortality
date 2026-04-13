@@ -3,68 +3,57 @@
 ### PART 10 - Sensitivity analysis for unmeasured confounding
 ################################################################################
 
-# remove history
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
 
-# set directory
-setwd(
-  "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
-)
+setwd("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 results_path <- "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Results/"
 
-# load libraries
 library(tidyverse)
-set.seed(1)        # set seed for parallel backend
+set.seed(1)
 
 ################################################################################
-### 2D plot, fix p0
+### Shared parameters
 ################################################################################
-# Parameters
-p0_values       <- c(0.4, 0.6, 0.8, 0.9)
-n               <- 100
-rr_cd           <- seq(2, 10, length.out = n)
 rr_confounded   <- 0.43
 rr_unconfounded <- 1
+n               <- 100
 
-# Single source of truth for factor levels
-p0_labels <- paste0("P_C0 = ", p0_values)
+################################################################################
+### 2D plot: fixed p_c0 — confounder strength (RR_CD) vs required p_c1
+################################################################################
+p_c0            <- c(0.4, 0.6, 0.8, 0.9)
+rr_cd           <- seq(2, 10, length.out = n)
 
-# Build long data frame
-df <- map_dfr(p0_values, function(p0) {
-  p1 <- (rr_confounded / rr_unconfounded * (p0 * (rr_cd - 1) + 1) - 1) / (rr_cd - 1)
+p_c0_labels       <- paste0("p_c0 = ", p_c0)
+my_colours      <- setNames(c("#1D9E75", "#378ADD", "#D85A30", "#8B0000"), p_c0_labels)
+
+df_fixed_p_c0 <- map_dfr(p_c0, function(p_c0) {
+  p_c1 <- (rr_confounded / rr_unconfounded * (p_c0 * (rr_cd - 1) + 1) - 1) / (rr_cd - 1)
   tibble(
     rr_cd       = rr_cd,
-    p1_required = p1,
-    p0_fixed    = factor(paste0("P_C0 = ", p0), levels = p0_labels)
+    p_c1        = p_c1,
+    p_c0_fixed    = factor(paste0("p_c0 = ", p_c0), levels = p_c0_labels)
   )
 }) %>%
-  filter(p1_required >= 0, p1_required <= 1)
+  filter(p_c1 >= 0, p_c1 <= 1)
 
-# Reference lines
-ref_df <- tibble(
-  p0_fixed   = factor(p0_labels, levels = p0_labels),
-  yintercept = p0_values
+ref_df_fixed_p_c0 <- tibble(
+  p_c0_fixed   = factor(p_c0_labels, levels = p_c0_labels),
+  yintercept = p_c0
 )
 
-# Colours keyed to the same p0_labels vector
-my_colours <- setNames(
-  c("#1D9E75", "#378ADD", "#D85A30", "#8B0000"),
-  p0_labels
-)
-
-# Plot
-p <- ggplot(df, aes(x = rr_cd, y = p1_required, colour = p0_fixed)) +
+plot_fixed_p_c0 <- ggplot(df_fixed_p_c0, aes(x = rr_cd, y = p_c1, colour = p_c0_fixed)) +
   geom_line(linewidth = 1) +
   geom_hline(
-    data      = ref_df,
-    aes(yintercept = yintercept, colour = p0_fixed),
+    data      = ref_df_fixed_p_c0,
+    aes(yintercept = yintercept, colour = p_c0_fixed),
     linetype  = "dashed",
     linewidth = 0.6
   ) +
   geom_text(
-    data        = ref_df,
-    aes(x = 9.5, y = yintercept + 0.025, label = as.character(p0_fixed), colour = p0_fixed),
+    data        = ref_df_fixed_p_c0,
+    aes(x = 9.5, y = yintercept + 0.025, label = as.character(p_c0_fixed), colour = p_c0_fixed),
     size        = 3,
     hjust       = 1,
     show.legend = FALSE
@@ -74,7 +63,7 @@ p <- ggplot(df, aes(x = rr_cd, y = p1_required, colour = p0_fixed)) +
   scale_colour_manual(values = my_colours) +
   labs(
     x      = "Confounder strength (RR_CD)",
-    y      = "Prevalence in dialysis group (P_C1)",
+    y      = "Prevalence in dialysis group (p_c1)",
     title  = "Prevalence gap needed to nullify the effect",
     colour = NULL
   ) +
@@ -85,51 +74,36 @@ p <- ggplot(df, aes(x = rr_cd, y = p1_required, colour = p0_fixed)) +
     legend.position  = "bottom",
     plot.title       = element_text(face = "bold", size = 14)
   )
-p
+plot_fixed_p_c0
 
 ggsave(
-  file.path(results_path, "Supplemental/Figure_M2_fix_p0.png"),
-  plot   = p,
+  file.path(results_path, "Supplemental/Figure_M2_fix_p_c0.png"),
+  plot   = plot_fixed_p_c0,
   width  = 8,
   height = 6,
   dpi    = 150
 )
 
 ################################################################################
-### 2D plot, fix RR_CD
+### 2D plot: fixed RR_CD — reference group prevalence (p_c0) vs required p_c1
 ################################################################################
-# Parameters
-rr_cd_values    <- c(2, 3, 4, 5)          # fixed RR_CD scenarios
-n               <- 100
-p0              <- seq(0.01, 0.99, length.out = n)
-rr_confounded   <- 0.43
-rr_unconfounded <- 1
+rr_cd         <- c(2, 3, 4, 5)
+p_c0          <- seq(0.01, 0.99, length.out = n)
 
-# Single source of truth for factor levels
-rr_cd_labels <- paste0("RR_CD = ", rr_cd_values)
+rr_cd_labels  <- paste0("RR_CD = ", rr_cd)
+my_colours2   <- setNames(c("#1D9E75", "#378ADD", "#D85A30", "#8B0000"), rr_cd_labels)
 
-# Build long data frame
-df2 <- map_dfr(rr_cd_values, function(rcd) {
-  p1 <- (rr_confounded / rr_unconfounded * (p0 * (rcd - 1) + 1) - 1) / (rcd - 1)
+df_fixed_rr_cd <- map_dfr(rr_cd, function(rcd) {
+  p1 <- (rr_confounded / rr_unconfounded * (p_c0 * (rcd - 1) + 1) - 1) / (rcd - 1)
   tibble(
-    p0_fixed    = p0,
-    p1_required = p1,
-    rr_cd_fixed = factor(paste0("RR_CD = ", rcd), levels = rr_cd_labels)
+    p_c0_fixed  = p_c0,
+    p_c1 = p1,
+    rr_cd = factor(paste0("RR_CD = ", rcd), levels = rr_cd_labels)
   )
 }) %>%
-  filter(p1_required >= 0, p1_required <= 1)
+  filter(p_c1 >= 0, p_c1 <= 1)
 
-# Reference line: p1 = p0 (perfect balance, no confounding)
-ref_line <- tibble(x = c(0, 1), y = c(0, 1))
-
-# Colours keyed to rr_cd_labels
-my_colours2 <- setNames(
-  c("#1D9E75", "#378ADD", "#D85A30", "#8B0000"),
-  rr_cd_labels
-)
-
-# Plot
-p2 <- ggplot(df2, aes(x = p0_fixed, y = p1_required, colour = rr_cd_fixed)) +
+plot_fixed_rr_cd <- ggplot(df_fixed_rr_cd, aes(x = p_c0_fixed, y = p_c1, colour = rr_cd)) +
   geom_line(linewidth = 1) +
   geom_abline(
     slope     = 1,
@@ -140,21 +114,21 @@ p2 <- ggplot(df2, aes(x = p0_fixed, y = p1_required, colour = rr_cd_fixed)) +
   ) +
   annotate(
     "text",
-    x     = 0.85,
-    y     = 0.82,
-    label = "P_C1 = P_C0 (no gap)",
-    size  = 3,
+    x      = 0.85,
+    y      = 0.82,
+    label  = "p_c1 = p_c0 (no gap)",
+    size   = 3,
     colour = "gray50"
   ) +
   scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
   scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
   scale_colour_manual(values = my_colours2) +
   labs(
-    x      = "Prevalence in reference group (P_C0)",
-    y      = "Prevalence in dialysis group (P_C1)",
-    title  = "Prevalence gap needed to nullify the effect",
+    x        = "Prevalence in reference group (p_c0)",
+    y        = "Prevalence in dialysis group (p_c1)",
+    title    = "Prevalence gap needed to nullify the effect",
     subtitle = paste0("RR_confounded = ", rr_confounded, ", RR_unconfounded = ", rr_unconfounded),
-    colour = NULL
+    colour   = NULL
   ) +
   theme_minimal(base_size = 13) +
   theme(
@@ -163,11 +137,11 @@ p2 <- ggplot(df2, aes(x = p0_fixed, y = p1_required, colour = rr_cd_fixed)) +
     legend.position  = "bottom",
     plot.title       = element_text(face = "bold", size = 14)
   )
-p2
+plot_fixed_rr_cd
 
 ggsave(
-  file.path(results_path, "Supplemental/Figure_M3_fix_rr_cd.png"),
-  plot   = p2,
+  file.path(results_path, "Supplemental/Figure_M2_fix_rr_cd.png"),
+  plot   = plot_fixed_rr_cd,
   width  = 8,
   height = 6,
   dpi    = 150
@@ -176,3 +150,49 @@ ggsave(
 ################################################################################
 ### 3D plot
 ################################################################################
+rr_cd       <- seq(2, 10, length.out = n)
+p_c1        <- seq(0, 0.5, length.out = n)
+p_c0_matrix <- outer(
+  rr_cd, p_c1,
+  function(rr_cd, p_c1) {
+    p_c0 <- (p_c1 * (rr_cd - 1) + 1 - rr_confounded) / (rr_confounded * (rr_cd - 1))
+    p_c0[p_c0 < 0 | p_c0 > 1] <- NA
+    return(p_c0)
+  }
+)
+
+# Color mapping: blue -> purple -> green4 along the p_c0 (z) axis
+nbcol         <- n
+color_palette <- colorRampPalette(c("blue", "purple", "green4"))(nbcol)
+
+z_facet <- (p_c0_matrix[-1, -1] +
+              p_c0_matrix[-1, -ncol(p_c0_matrix)] +
+              p_c0_matrix[-nrow(p_c0_matrix), -1] +
+              p_c0_matrix[-nrow(p_c0_matrix), -ncol(p_c0_matrix)]) / 4
+facet_col <- color_palette[cut(z_facet, nbcol)]
+
+png(
+  file.path(results_path, paste0("Supplemental/Figure_M2_3D_Plot.png")),
+  width  = 1200,
+  height = 1000,
+  res    = 150
+)
+par(mar = c(2, 2, 4, 2))
+persp(
+  rr_cd, p_c0, p_c0_matrix,
+  theta     = 310,
+  phi       = 20,
+  expand    = 0.8,
+  col       = facet_col,
+  lwd       = 0.2,
+  ticktype  = "detailed",
+  border    = "black",
+  xlab      = "Confounder-outcome strength (RR_CD)",
+  ylab      = "Prevalence dialysis (p_c1)",
+  zlab      = "Prevalence conservative care (p_c0)",
+  main      = "Sensitivity Analysis",
+  cex.main  = 1.2,
+  cex.axis  = 0.8,
+  cex.lab   = 1
+)
+dev.off()
