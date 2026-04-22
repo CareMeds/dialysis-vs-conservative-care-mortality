@@ -123,19 +123,6 @@ for (w_meth in w_meths) {
   assign(paste0("out_KM_", outcome_var, "_", w_meth), out_KM)
 }
 
-# for sensitivity analysis for unmeasured confounding
-surv_out <- out_KM_event_death_2y_IPTW$KM_plot$data
-cat(
-  " Risk of all-cause mortality among patients who chose dialysis at 6 months         :",
-  (1 - as.numeric(surv_out[surv_out$time == 182 &
-                             surv_out$strata == 1, "surv"])) * 100,
-  "\n",
-  "Risk of all-cause mortality among patients who chose conservative care at 6 months:",
-  (1 - as.numeric(surv_out[surv_out$time == 182 &
-                             surv_out$strata == 0, "surv"])) * 100,
-  "\n"
-)
-
 # Create Figures
 ggplot2::ggsave(
   plot = ggpubr::ggarrange(

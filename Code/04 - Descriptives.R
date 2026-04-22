@@ -88,7 +88,7 @@ time_hist <- ggplot2::ggplot(dialysis_long, ggplot2::aes(x = time_years, fill = 
     color = "white",
     linewidth = 0.1
   ) +
-  ggplot2::facet_wrap( ~ type) +
+  ggplot2::facet_wrap(~ type) +
   ggplot2::scale_x_continuous(breaks = seq(0, max(dialysis_long$time_years, na.rm = TRUE), by = 1)) +
   ggplot2::scale_fill_brewer(palette = "Set1") +
   ggplot2::theme_minimal(base_size = 18) +
@@ -113,13 +113,15 @@ time_hist_zoomed <- time_hist +
   )
 
 # suppress warnings produced by zoomed histogram
-suppressWarnings(ggplot2::ggsave(
-  plot = time_hist / time_hist_zoomed,
-  filename = paste0(results_path, "Supplemental/Figure_S4.png"),
-  width = 10,
-  height = 8,
-  dpi = 300
-))
+suppressWarnings(
+  ggplot2::ggsave(
+    plot = time_hist / time_hist_zoomed,
+    filename = paste0(results_path, "Supplemental/Figure_S5_hist.png"),
+    width = 10,
+    height = 8,
+    dpi = 300
+  )
+)
 
 ################################################################################
 ### Baseline characteristics for full eligibility cohort and cohort after weighting
@@ -227,6 +229,7 @@ table_full_elig <- create_baseline_table(
   weights = NULL,
   vars = listvar,
   categoricalVars = catvar,
+  continuousVars = contvar,
   IQRVars = non_normal_vars,
   treatmentColumn = "S",
   treatmentLabel = "Treatment registered",
@@ -243,6 +246,7 @@ table_full_elig_IPSW <- create_baseline_table(
   weights = elig_cohort$sw_IPSW,
   vars = listvar,
   categoricalVars = catvar,
+  continuousVars = contvar,
   IQRVars = non_normal_vars,
   treatmentColumn = "S",
   treatmentLabel = "Treatment registered",
@@ -267,6 +271,7 @@ for (w_meth in w_meths) {
       weights = weights_meth,
       vars = listvar_main,
       categoricalVars = catvar,
+      continuousVars = contvar,
       IQRVars = non_normal_vars,
       treatmentColumn = trt_var,
       treatmentLabel = treatment_label,
@@ -278,27 +283,27 @@ for (w_meth in w_meths) {
         w_meth
       )
     )
-    
-    openxlsx::write.xlsx(
-      table_one$raw_table,
-      rowNames = TRUE,
-      file = paste0(
-        results_path,
-        "Main/Descriptives_",
-        ifelse(w_meth == "unweighted", "no_weighting", paste0("weighting_", w_meth)),
-        ".xlsx"
-      )
+    save_table <- rbind(
+      table_one$raw_table[1:4, ],
+      rep("", 4),
+      table_one$raw_table[5:15, ],
+      rep("", 4),
+      table_one$raw_table[16:23, ],
+      rep("", 4),
+      table_one$raw_table[24:38, ]
     )
+    assign(paste0("save_table_", w_meth), save_table)
   }
   
   # create descriptive statistics table
   if (w_meth != "IPSW" & w_meth != "IPSW_IPTW") {
-    table_one <- create_baseline_table(
+    table_one_full <- create_baseline_table(
       data = baseline,
       id_name = "LOPNR",
       weights = weights_meth,
       vars = listvar,
       categoricalVars = catvar,
+      continuousVars = contvar,
       IQRVars = non_normal_vars,
       treatmentColumn = trt_var,
       treatmentLabel = treatment_label,
@@ -313,31 +318,35 @@ for (w_meth in w_meths) {
     )
     
     # save table
-    openxlsx::write.xlsx(
-      table_one$raw_table,
-      rowNames = TRUE,
-      file = paste0(
-        results_path,
-        ifelse(
-          w_meth == "unweighted" |
-            w_meth == "IPTW",
-          "Supplemental",
-          "Other"
-        ),
-        "/Descriptives_",
-        ifelse(
-          w_meth == "unweighted",
-          "no_weighting",
-          paste0("weighting_", w_meth)
-        ),
-        ".xlsx"
-      )
+    save_table <- rbind(
+      table_one_full$raw_table[1:27,],
+      rep("", 4),
+      table_one_full$raw_table[28:53, ],
+      rep("", 4),
+      table_one_full$raw_table[54:73, ],
+      rep("", 4),
+      table_one_full$raw_table[74:92, ]
     )
+    assign(paste0("save_full_table_", w_meth), save_table)
   }
   
   # save SMD values for love plot
-  assign(paste0("SMD_", w_meth), table_one$smd_table)
+  assign(paste0("SMD_", w_meth), table_one_full$smd_table)
 }
+openxlsx::write.xlsx(
+  cbind(save_table_unweighted[, -1],
+        rep("", nrow(save_table_unweighted)),
+        save_table_IPTW[, -1]),
+  rowNames = TRUE,
+  file = paste0(results_path, "Main/Table_S1_raw.xlsx")
+)
+openxlsx::write.xlsx(
+  cbind(save_full_table_unweighted,
+        rep("", nrow(save_full_table_unweighted)),
+        save_full_table_IPTW),
+  rowNames = TRUE,
+  file = paste0(results_path, "Supplemental/Table_S2_raw.xlsx")
+)
 
 ################################################################################
 ### Create love plots of SMDs before and after IPTW ############################
@@ -416,7 +425,7 @@ ggplot2::ggsave(
     plotColors = manual_colors,
     xmax = 1
   ),
-  filename = paste0(results_path, "Supplemental/Figure_S3.png"),
+  filename = paste0(results_path, "Supplemental/Figure_S4_SMD.png"),
   width = 15,
   height = 15,
   dpi = 300
@@ -502,22 +511,34 @@ ggplot2::ggsave(
 # descriptives full eligibility
 table_full_elig[, "SMD"] <- ""
 table_full_elig[rownames(table_full_elig) %in% row_names_without_levels, "SMD"] <- sprintf("%.3f", SMD_elig)
-openxlsx::write.xlsx(
-  table_full_elig,
-  rowNames = TRUE,
-  file = paste0(
-    results_path,
-    "Supplemental/Descriptives_full_eligibility_cohort.xlsx"
-  )
-)
+table_full_elig_unweighted <- rbind(table_full_elig[1:27,],
+                                    rep("", 4),
+                                    table_full_elig[28:53, ],
+                                    rep("", 4),
+                                    table_full_elig[54:73, ],
+                                    rep("", 4),
+                                    table_full_elig[74:92, ])
 table_full_elig_IPSW[, "SMD"] <- ""
 table_full_elig_IPSW[rownames(table_full_elig_IPSW) %in% row_names_without_levels, "SMD"] <- sprintf("%.3f", SMD_elig_wt)
+table_full_elig_IPSW <- rbind(
+  table_full_elig_IPSW[1:27, ],
+  rep("", 4),
+  table_full_elig_IPSW[28:53, ],
+  rep("", 4),
+  table_full_elig_IPSW[54:73, ],
+  rep("", 4),
+  table_full_elig_IPSW[74:92, ]
+)
 openxlsx::write.xlsx(
-  table_full_elig_IPSW,
+  cbind(
+    table_full_elig_unweighted,
+    rep("", nrow(table_full_elig_unweighted)),
+    table_full_elig_IPSW
+  ),
   rowNames = TRUE,
   file = paste0(
     results_path,
-    "Supplemental/Descriptives_full_eligibility_cohort_IPSW.xlsx"
+    "Supplemental/Table_S8_raw.xlsx"
   )
 )
 
@@ -604,51 +625,56 @@ three_decisions_dt[LOPNR == 176579584 | LOPNR == 495890215, .(
 )]
 
 stats_dialysis <- data.frame(
-  names = c("Maximum time until dialysis",
-            "# patients choosing dialysis", 
-            "Treatment switches for dialysis",
-            "# treatment switches for dialysis",
-            "Treatment switches for conservative care",
-            "# treatment switches for conservative care",
-            "# patients that chose dialysis starting dialysis within two years",
-            "# patients that chose PD starting dialysis within two years",
-            "# patients that chose HD starting dialysis within two years",
-            "# patients that chose dialysis starting dialysis within 3 months",
-            "# patients that chose dialysis starting dialysis between 3-6 months",
-            "# patients that chose dialysis starting dialysis between 6-12 months",
-            "# patients that chose dialysis starting dialysis between 12-24 months",
-            "# patients that chose dialysis but died before starting dialysis within two years",
-            "Number of transplantations in two years after dialysis decision:",
-            "% transplantations in two years after dialysis decision:"
+  names = c(
+    "Maximum time until dialysis",
+    "# patients choosing dialysis",
+    "Treatment switches for dialysis",
+    "# treatment switches for dialysis",
+    "Treatment switches for conservative care",
+    "# treatment switches for conservative care",
+    "# patients that chose dialysis starting dialysis within two years",
+    "# patients that chose PD starting dialysis within two years",
+    "# patients that chose HD starting dialysis within two years",
+    "# patients that chose dialysis starting dialysis within 3 months",
+    "# patients that chose dialysis starting dialysis between 3-6 months",
+    "# patients that chose dialysis starting dialysis between 6-12 months",
+    "# patients that chose dialysis starting dialysis between 12-24 months",
+    "# patients that chose dialysis but died before starting dialysis within two years",
+    "Number of transplantations in two years after dialysis decision:",
+    "% transplantations in two years after dialysis decision:"
   ),
-  counts = c(max(dialysis_df$time_until_dialysis, na.rm=TRUE),
-             nrow(dialysis_df),
-             sum(baseline$n_decision_2==1 & baseline$trt==1),
-             sum(baseline$n_decision_2==1 & baseline$trt==1) / sum(baseline$trt==1) * 100,
-             sum(baseline$n_decision_2==1 & baseline$trt==0),
-             sum(baseline$n_decision_2==1 & baseline$trt==0) / sum(baseline$trt==0) * 100,
-             dialysis_df[!is.na(time_until_dialysis) &
-                           time_until_dialysis <= 2, .N],
-             dialysis_df[!is.na(time_until_PD) &
-                           time_until_PD <= 2, .N],
-             dialysis_df[!is.na(time_until_HD) &
-                           time_until_HD <= 2, .N],
-             dialysis_df[!is.na(time_until_dialysis) &
-                           time_until_dialysis <= 3 / 12, .N],
-             dialysis_df[!is.na(time_until_dialysis) &
-                           time_until_dialysis > 3 / 12 &
-                           time_until_dialysis <= 0.5, .N],
-             dialysis_df[!is.na(time_until_dialysis) &
-                           time_until_dialysis > 0.5 &
-                           time_until_dialysis <= 1, .N],
-             dialysis_df[!is.na(time_until_dialysis) &
-                           time_until_dialysis > 1 &
-                           time_until_dialysis <= 2, .N],
-             dialysis_df[time2event_death_2y < time_until_dialysis_days, .N],
-             nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
-                                       baseline_TX$time_until_TX < 2 * 365, "LOPNR"])),
-             nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
-                                       baseline_TX$time_until_TX < 2 * 365, "LOPNR"])) / sum(baseline$trt==1) * 100
+  counts = c(
+    max(dialysis_df$time_until_dialysis, na.rm = TRUE),
+    nrow(dialysis_df),
+    sum(baseline$n_decision_2 == 1 & baseline$trt == 1),
+    sum(baseline$n_decision_2 == 1 &
+          baseline$trt == 1) / sum(baseline$trt == 1) * 100,
+    sum(baseline$n_decision_2 == 1 & baseline$trt == 0),
+    sum(baseline$n_decision_2 == 1 &
+          baseline$trt == 0) / sum(baseline$trt == 0) * 100,
+    dialysis_df[!is.na(time_until_dialysis) &
+                  time_until_dialysis <= 2, .N],
+    dialysis_df[!is.na(time_until_PD) &
+                  time_until_PD <= 2, .N],
+    dialysis_df[!is.na(time_until_HD) &
+                  time_until_HD <= 2, .N],
+    dialysis_df[!is.na(time_until_dialysis) &
+                  time_until_dialysis <= 3 / 12, .N],
+    dialysis_df[!is.na(time_until_dialysis) &
+                  time_until_dialysis > 3 / 12 &
+                  time_until_dialysis <= 0.5, .N],
+    dialysis_df[!is.na(time_until_dialysis) &
+                  time_until_dialysis > 0.5 &
+                  time_until_dialysis <= 1, .N],
+    dialysis_df[!is.na(time_until_dialysis) &
+                  time_until_dialysis > 1 &
+                  time_until_dialysis <= 2, .N],
+    dialysis_df[time2event_death_2y < time_until_dialysis_days, .N],
+    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
+                              baseline_TX$time_until_TX < 2 * 365, "LOPNR"])),
+    nrow(unique(baseline_TX[baseline_TX$time_until_TX > 0 &
+                              baseline_TX$time_until_TX < 2 * 365, "LOPNR"])) / sum(baseline$trt ==
+                                                                                      1) * 100
   )
 )
 openxlsx::write.xlsx(

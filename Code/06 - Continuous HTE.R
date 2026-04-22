@@ -30,7 +30,7 @@ source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
 # perform internal validation 
-validate <- TRUE
+validate <- FALSE
 
 ################################################################################
 ### Load data ##################################################################
