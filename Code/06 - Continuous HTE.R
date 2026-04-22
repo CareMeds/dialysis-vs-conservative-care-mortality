@@ -306,6 +306,7 @@ for (nr_analysis in 1:2) {
         weights = bootstrap_reestimated$data$w,
         vars = listvar,
         categoricalVars = catvar,
+        continuousVars = contvar,
         IQRVars = non_normal_vars,
         treatmentColumn = trt_var,
         treatmentLabel = treatment_label,

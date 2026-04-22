@@ -124,6 +124,7 @@ for (trim_meth in trim_meths) {
     weights = weights_meth,
     vars = listvar,
     categoricalVars = catvar,
+    continuousVars = contvar,
     IQRVars = non_normal_vars,
     treatmentColumn = trt_var,
     treatmentLabel = treatment_label,
