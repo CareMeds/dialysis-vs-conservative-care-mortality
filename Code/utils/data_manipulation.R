@@ -50,40 +50,6 @@ fix_counts <- function(x) {
 }
 
 # For each visit, retrieve information from the past up to 'max_roll_days' days
-# retrieve_past_info <- function(dt,
-#                                dictionary,
-#                                id_name,
-#                                date_name,
-#                                var_name,
-#                                lookback_years = 1, 
-#                                fill_with_zero = FALSE) {
-#   # Subset dictionary to non-NA values for this variable
-#   dict_sub <- dictionary[!is.na(get(var_name)), .(
-#     id = get(id_name),
-#     visit_date = get(date_name),
-#     value = get(var_name)
-#   )]
-#   
-#   # Subset rows where this variable is NA
-#   missing_sub <- dt[is.na(get(var_name)), .(id = get(id_name), 
-#                                             visit_date = get(date_name))]
-#   
-#   # Rolling join: find most recent value within lookback_years before visit_date
-#   filled <- dict_sub[missing_sub, 
-#                      on = .(id, visit_date),
-#                      roll = lookback_years]
-#   
-#   # Update with filled values
-#   dt[is.na(get(var_name)), (var_name) := filled$value]
-#   
-#   # set remaining NA to 0
-#   if (fill_with_zero) {
-#     dt[, (var_name) := lapply(.SD, \(x) fifelse(is.na(x), 0, x)),
-#        .SDcols = var_name]
-#   }
-#   
-#   return(dt)
-# }
 retrieve_past_info <- function(dt,
                                dictionary,
                                id_name,
@@ -176,13 +142,6 @@ add_bday_rows <- function(dt,
                                                                  lubridate::years(bday_year)))]
   
   # identify patients with visits before xth birthday
-  # and either had a visit after xth birthday or died after xth birhtday
-  # eligible_bday <- dt[, .(
-  #   visit_before = any(visit_date < bday[1]),
-  #   visit_after  = any(visit_date > bday[1]),
-  #   died_after = any(is.na(date_of_death) | date_of_death > bday[1])
-  # ), by = id][(visit_before & visit_after) |
-  #               (visit_before & died_after), id]
   eligible_bday <- dt[, .(
     bday_val     = bday[1],
     visit_before = any(visit_date < bday[1]),
@@ -224,26 +183,6 @@ add_bday_rows <- function(dt,
 }
 
 # determine end of eligibility
-# eligibility_end <- function(visit_date, next_visit, date_of_death, study_end) {
-#   # create variable that adds one year to visit_date
-#   next_visit_plus_1_yr <- data.table::as.IDate(lubridate::add_with_rollback(visit_date, lubridate::years(1)))
-#   
-#   # return end of eligibliity
-#   # Case 1: next visit exists and is within 1 year
-#   # if same day, keep it as is otherwise subtract 1 day
-#   # Case 2: otherwise, eligibility ends at the earliest of:
-#   #   - 1 year after current visit
-#   #   - one day before date of death
-#   data.table::fifelse(
-#     !is.na(next_visit) & next_visit <= next_visit_plus_1_yr,
-#     data.table::fifelse(visit_date == next_visit, next_visit, next_visit - 1),
-#     pmin(
-#       data.table::as.IDate(next_visit_plus_1_yr),
-#       date_of_death - 1,
-#       na.rm = TRUE
-#     )
-#   )
-# }
 eligibility_end <- function(visit_date, next_visit, date_of_death, study_end) {
   
   # Calculate 1 year forward using robust calendar logic

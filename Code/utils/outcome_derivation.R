@@ -3,6 +3,7 @@
 # -----------------------------
 calc_event <- function(cohort_dt,
                        end_follow_up = NULL,
+                       censor_at_death = FALSE, # Censor at death or not
                        outcome_dataset = NULL,
                        id_name = NULL,     # Column containing IDs (e.g., LOPNR) 
                        date_col = NULL,    # Column containing the event date (e.g., DODSDAT or INDATUM)
@@ -49,14 +50,21 @@ calc_event <- function(cohort_dt,
   # Compute censoring date for the follow-up window
   # -----------------------------
   # Take the minimum of:
-  # 1. Date of death (DODSDAT)
-  # 2. End of follow-up (end_follow_up)
-  # 3. Visit date + window, taking into account leap year dates
+  # 1. End of follow-up (end_follow_up)
+  # 2. Visit date + window, taking into account leap year dates
+  # 3. If censor_at_death is TRUE, censor at date of death (DODSDAT)
   # This ensures that follow-up does not exceed the specified window or study end
-  dt[, censor := pmin(DODSDAT,
-                      end_follow_up, 
-                      lubridate::add_with_rollback(visit_date, lubridate::years(window)),
-                      na.rm = TRUE)]
+  if (censor_at_death) {
+    dt[, censor := pmin(DODSDAT,
+                        end_follow_up,
+                        lubridate::add_with_rollback(visit_date, lubridate::years(window)),
+                        na.rm = TRUE)]
+  } else {
+    # For mortality outcome: do NOT censor at DODSDAT
+    dt[, censor := pmin(end_follow_up,
+                        lubridate::add_with_rollback(visit_date, lubridate::years(window)),
+                        na.rm = TRUE)]
+  }
   
   # -----------------------------
   # Define the event indicator
@@ -121,6 +129,7 @@ add_multiple_outcomes <- function(cohort_dt,
       res <- calc_event(
         cohort_dt = dt,
         end_follow_up = end_follow_up,
+        censor_at_death = ifelse(outcome_name == "death", FALSE, TRUE), # only censor all-cause death if it is not the outcome
         outcome_dataset = outcome$dataset, # dataset containing the events
         id_name = id_name,                 # column with the IDs
         date_col = outcome$date_col,       # column with the event date

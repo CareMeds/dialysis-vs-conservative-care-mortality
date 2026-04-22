@@ -23,8 +23,8 @@ safe_sbw <- function(...) {
 }
 
 # obtain weights
-# TODO: add trt_var as argument
 create_weights <- function(data,
+                           trt_var = "trt", 
                            elig_cohort = NULL,
                            model_PS,
                            model_S = NULL,
@@ -197,7 +197,7 @@ create_weights <- function(data,
     results <- data.table::rbindlist(list(results_overall, results_strat),
                                      use.names = TRUE,
                                      fill = TRUE)
-    data.table::setcolorder(results, c("trt", setdiff(names(results), "trt")))
+    data.table::setcolorder(results, c(trt_var, setdiff(names(results), trt_var)))
     print(results)
   } else{
     dist <- NA
@@ -336,16 +336,3 @@ summarize.weights <- function(data) {
   
   return(result)
 }
-
-# # quantify extreme PS
-# extreme_PS <- function(nonoverlap, ps) {
-#   ps_df <- data.frame(stats = c(
-#     nrow(nonoverlap),
-#     sum(ps < 0.01),
-#     sum(ps < 0.05),
-#     sum(ps > 0.95),
-#     sum(ps > 0.99)
-#   ))
-#   rownames(ps_df) <- c("nonoverlap", "# PS < 0.01", "# PS < 0.05", "# PS > 0.95", "# PS > 0.99")
-#   return(ps_df)
-# }

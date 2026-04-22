@@ -203,13 +203,12 @@ compute_risk_at_multiple_times <- function(data,
       R1 = R1,
       R0 = R0,
       RD = R1 - R0,
-      RR = ifelse(R0 == 0, 0, R1 / R0), # DISCUSS: R1 / R0,
+      RR = ifelse(R0 == 0, 0, R1 / R0),
       RMST0 = cumsum(1 - R0),
       RMST1 = cumsum(1 - R1),
       dRMST = RMST1 - RMST0,
       HR = HR
     )
-  # dplyr::filter(time %in% horizon)
   
   # If RR is undefined, set to zero
   dat.table[is.na(dat.table$RR), "RR"] <- 0
@@ -329,6 +328,7 @@ compute_absolute_risk_at_multiple_times <- function(data,
   return(dat.table)
 }
 
+# Compute confidence interval of measures at all time points
 compute_CI_at_multiple_times <- function(data,
                                          horizon,
                                          elig_cohort,
@@ -681,6 +681,7 @@ compute_CI_at_multiple_times <- function(data,
   return(totalboot)
 }
 
+# Calculate performance measures of risk model
 compute_measures <- function(risk_model, data, plot = FALSE) {
   # psuedovalues
   Score <- riskRegression::Score(
@@ -748,6 +749,7 @@ compute_measures <- function(risk_model, data, plot = FALSE) {
   )
 }
 
+# Estimate heterogeneous treatment effect
 compute_HTE <- function(data,
                         unit = "months",
                         horizon,

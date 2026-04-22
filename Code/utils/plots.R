@@ -461,8 +461,6 @@ create_forest_plot_all_measures <- function(dt,
       ggplot2::geom_point(ggplot2::aes(x = .data[[measure]]),
                           shape = 15,
                           size = 2) +
-      # ggplot2::geom_errorbarh(ggplot2::aes(xmin = .data[[paste0(measure, "_lower")]], 
-      #                                      xmax = .data[[paste0(measure, "_upper")]]), height = 0) +
       ggplot2::geom_errorbar(
         ggplot2::aes(
           xmin = .data[[paste0(measure, "_lower")]], 
