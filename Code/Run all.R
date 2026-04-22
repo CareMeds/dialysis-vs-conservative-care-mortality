@@ -16,14 +16,12 @@ source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conser
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/02 - Covariate and outcome derivation.R")
 
 # fit transportability and propensity score model, and create weights
-# TODO: write about adding CRP to weighting model as log(crp + 1)
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/03 - Compute weights.R")
 
 # create descriptive statistics
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/04 - Descriptives.R")
 
 # calculate overall average treatment effects
-# TODO: check censoring tick marks
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/05 - ATE.R")
 
 # Effect modification analysis
@@ -34,7 +32,6 @@ source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conser
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/07 - Example Supplemental Methods.R")
 
 # Sensitivity analysis for positivity
-# TODO: `geom_errorbarh()` was deprecated in ggplot2 4.0.0. Please use the `orientation` argument of `geom_errorbar()` instead.
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/08 - SA positivity.R")
 
 # Time-to-dialysis

@@ -214,6 +214,7 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
 # Create IPTW weights on full cohort
 out_weights <- create_weights(
   data = baseline,
+  trt_var = trt_var,
   model_PS = model_PS,
   w_meth = "IPTW",
   verbose = FALSE
@@ -231,6 +232,7 @@ table_one <- create_baseline_table(
   weights = baseline$w,
   vars = listvar,
   categoricalVars = catvar,
+  continuousVars = contvar,
   IQRVars = non_normal_vars,
   treatmentColumn = trt_var,
   treatmentLabel = treatment_label,
@@ -383,6 +385,7 @@ model_S <- update(model_PS, S ~ . - rms::pol(age, 2):vasodilator)
 for (w_meth in w_meths[-1]) {
   out_weights <- create_weights(
     data = baseline,
+    trt_var = trt_var,
     elig_cohort = elig_cohort,
     model_PS = model_PS,
     model_S = model_S,
