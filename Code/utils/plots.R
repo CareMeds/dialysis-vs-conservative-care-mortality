@@ -796,9 +796,9 @@ build_annotation <- function(apparent_vals, boot_vals, optimism_vals) {
   ci_hi <- function(metric) quantile(boot_vals[[metric]], 0.975) - optimism_vals[metric]
   
   paste0(
-    "Calibration intercept ", fmt_ci(corr("Intercept"), ci_lo("Intercept"), ci_hi("Intercept"), digits = 2),
-    "\nCalibration slope ",   fmt_ci(corr("Slope"),     ci_lo("Slope"),     ci_hi("Slope"), digits = 2),
-    "\nAUC ",                 fmt_ci(corr("AUC"),       ci_lo("AUC"),       ci_hi("AUC"), digits = 2)
+    "Calibration intercept ", fmt_ci(corr("Intercept"), ci_lo("Intercept"), ci_hi("Intercept"), digits = 3),
+    "\nCalibration slope ",   fmt_ci(corr("Slope"),     ci_lo("Slope"),     ci_hi("Slope"), digits = 3),
+    "\nAUC ",                 fmt_ci(corr("AUC"),       ci_lo("AUC"),       ci_hi("AUC"), digits = 3)
   )
 }
 
@@ -824,4 +824,38 @@ save_cal_plot <- function(cal_plot_obj, annotated_plot, filename) {
     height   = 5,
     dpi      = 300
   )
+}
+
+plot_metric <- function(df,
+                        y_var,
+                        y_lab,
+                        x_lab = "",
+                        x_lim = c(0, 1),
+                        y_lim = c(0, 1)) {
+  if (y_var == "dRMST"){
+    y_lab <- "\u0394RMST (months)" 
+  }
+  
+  if (y_var == "RD"){
+    y_lab <- "RD (%)" 
+  }
+  
+  plot <- ggplot2::ggplot(df, ggplot2::aes(x = mortality_risk, y = .data[[y_var]])) +
+    ggplot2::geom_line(linewidth = 1, na.rm = TRUE) +
+    ggplot2::scale_x_continuous(limits = c(x_lim[1]-0.05, x_lim[2]+0.05), 
+                                breaks = seq(x_lim[1], x_lim[2], 0.1)) +
+    ggplot2::labs(y = y_lab, x = x_lab) +
+    ggplot2::theme_classic()
+  
+  if (y_var == "RD"){
+    plot <- plot + ggplot2::scale_y_continuous(
+      limits = c(y_lim[1], y_lim[2]),
+      breaks = seq(y_lim[1], y_lim[2], 0.1),
+      labels = function(x) paste0(x * 100)
+    )
+  } else{
+    plot <- plot + ggplot2::ylim(y_lim)
+  }
+  
+  return(plot)
 }

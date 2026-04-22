@@ -37,6 +37,18 @@ calculate_age <- function(dt, birthdate_col, visitdate_col) {
   return(dt)
 }
 
+# remove decimals from counts
+fix_counts <- function(x) {
+  sapply(x, function(cell) {
+    # Fix "370.9 (11.3)" -> "371 (11.3)"
+    m <- regmatches(cell, regexpr("^\\d+\\.\\d+(?=\\s*\\()", cell, perl = TRUE))
+    if (length(m) == 1) {
+      cell <- sub("^\\d+\\.\\d+", round(as.numeric(m)), cell)
+    }
+    cell
+  }, USE.NAMES = FALSE)
+}
+
 # For each visit, retrieve information from the past up to 'max_roll_days' days
 # retrieve_past_info <- function(dt,
 #                                dictionary,
@@ -474,15 +486,4 @@ fmt_ci <- function(estimate, lower, upper, digits = 1) {
          ", ",
          fmt(upper, digits),
          ")")
-}
-
-# Calculate Required P_C0
-calc_p0 <- function(rr, p1) {
-  num <- p1 * (rr - 1) + 1 - bias_factor
-  den <- bias_factor * (rr - 1)
-  p0 <- num / den
-  
-  # Ensure P_C0 stays within probability bounds [0, 1]
-  p0[p0 < 0 | p0 > 1] <- NA
-  return(p0)
 }

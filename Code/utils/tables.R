@@ -20,6 +20,7 @@ create_baseline_table <- function(data,
                                   weights = NULL,
                                   vars,
                                   categoricalVars,
+                                  continuousVars, 
                                   IQRVars = NULL,
                                   treatmentColumn = NULL,
                                   treatmentLabel = NULL,
@@ -63,9 +64,16 @@ create_baseline_table <- function(data,
     pDigits = 3,
     format = "fp"
   )
-  table_overall <- as.matrix(table_overall)
-  table_overall
-  
+
+  # Only apply to rows belonging to categorical variables
+  cont_rows <- grepl(
+    paste0("^(", paste(continuousVars, collapse = "|"), ")"),
+    trimws(rownames(table_overall))
+  )
+  rn <- rownames(table_overall)
+  table_overall[!cont_rows, ] <- apply(table_overall[!cont_rows, , drop = FALSE], 2, fix_counts)
+  rownames(table_overall) <- rn
+
   # Optional row labels
   if (!is.null(tableRowLabels) && length(tableRowLabels) > 1) {
     row.names(table_overall) <- tableRowLabels
@@ -106,9 +114,20 @@ create_baseline_table <- function(data,
       pDigits = 3,
       smd = TRUE
     )
+
+    # Only apply to rows belonging to categorical variables
+    cont_rows <- grepl(
+      paste0("^(", paste(continuousVars, collapse = "|"), ")"),
+      trimws(rownames(table_stratified))
+    )
+    rn <- rownames(table_stratified)
+    table_stratified_rounded <- table_stratified
+    table_stratified_rounded[!cont_rows, ] <- apply(table_stratified[!cont_rows, , drop = FALSE], 2, fix_counts)
+    rownames(table_stratified_rounded) <- rn
     
     # Keep treatment, control, and SMD columns
-    table_stratified <- as.matrix(table_stratified[, c(2, 1, 5)])
+    table_stratified <- as.matrix(cbind(table_stratified_rounded[, c("1", "0")],
+                                        table_stratified[, "SMD"]))
     
     # Optional row labels
     if (!is.null(tableRowLabels) && length(tableRowLabels) > 1) {
