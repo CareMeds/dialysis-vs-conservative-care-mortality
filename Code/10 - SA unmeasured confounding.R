@@ -170,21 +170,20 @@ ggsave(
   dpi    = 150
 )
 
-# example
+# Example below Table
 RR_CD <- 3
 P_C0 <- 60
 P_C1 <- (rr_confounded / rr_unconfounded * (P_C0 / 100 * (RR_CD - 1) + 1) - 1) / (RR_CD - 1)
 cat("Example", "\n",
-    "RR_CD:", RR_CD, "\n",
-    "P_C0 :", P_C0, "\n",
-    "P_C1 :", P_C1 * 100)
+    "RR_CD:", RR_CD, "\n", # 3
+    "P_C0 :", P_C0, "\n",  # 60
+    "P_C1 :", P_C1 * 100)  # 12.7
 
-# text
-P_C0 <- c(40, 60, 80)
-P_C1 <- c(0, 0, 0)
+# Examples in text
+P_C0 <- rep(c(40, 60, 80), 4)
+P_C1 <- c(0, 20, 40, 10, 30, 50, 20, 40, 60, 30, 50, 70)
+gap <- P_C0 - P_C1
+P_C0_C1 <- P_C1 / P_C0
 k <- rr_confounded / rr_unconfounded
-RR_CD <- 1 + (1 - k) / (k * P_C0 / 100 - P_C1)
-cat("Example", "\n",
-    "RR_CD:", RR_CD, "\n",
-    "P_C0 :", P_C0, "\n",
-    "P_C1 :", P_C1 * 100)
+RR_CD <- 1 + (1 - k) / (k * P_C0 / 100 - P_C1 / 100)
+data.frame(P_C0, P_C0, gap, P_C0_C1, RR_CD)
