@@ -28,6 +28,7 @@ This file applies the eligibility criteria:
 3. All lab measurements with maximum one-year look-back
 4. No history of kidney transplantation or dialysis
 5. No history of HIV or dementia
+
 *Davies comorbidities are malignancies, ischemic heart disease, peripheral valvular disese, heart failure, diabetes mellitus, systemic collagen vascular disease, COPD, cirrhosis, psychiatric illness, and HIV.
 
 First, define the time intervals in which patients are eligible. Second, expand the data table for each day within the time interval. Third, if the decision falls on an eligible date, include patient in cohort. 
