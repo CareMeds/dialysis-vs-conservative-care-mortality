@@ -99,7 +99,7 @@ Compare estimates of average treatment effect when applying overlap weighting, C
 Some patients choosing dialysis do not immediately initiate dialysis. To estimate how much time patients spend in dialysis state in the two years following their decision. For those choosing dialysis, we fit a multi-state illness-death model with the states "Alive without dialysis", "Dialysis", and "Death".
 
 ## 10 - SA unmeasured confounding
-Sensitivity analysis investigating unmeasured confounding using 1) simple bias analysis; 2) E-value; 3) quantitative bias analysis.
+Sensitivity analysis investigating unmeasured confounding.
 
 ## 11 - Supplemental Figure HTE
 This file creates a Figure that illustrates the mathematical relationship between absolute and relative HTE.
