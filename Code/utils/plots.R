@@ -589,11 +589,13 @@ effect_plot <- function(estimates_df,
   plot <- ggplot2::ggplot(estimates_df,
                           ggplot2::aes(x = effect_modifier_range, y = get(measure))) +
     ggplot2::geom_line() +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = get(paste0(measure, "_lower")), ymax = get(paste0(measure, "_upper"))), alpha = 0.1) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = get(paste0(measure, "_lower")),
+                                      ymax = get(paste0(measure, "_upper"))),
+                         alpha = 0.3) +
     ggplot2::geom_hline(
       yintercept = y_middle,
       linetype = "dashed",
-      color = "darkgrey"
+      color = "black"
     ) +
     ggplot2::scale_y_continuous(limits = c(y_min, y_max), breaks = y_breaks) +
     ggplot2::labs(x = NULL,
@@ -689,7 +691,7 @@ create_histogram_stratified <- function(dt, var_name, trt_name, manual_colors) {
   } else if (var_name == "pred_risk") {
     hist_stratified <- hist_stratified +
       ggplot2::scale_x_continuous(breaks = seq(0, 1, 0.1),
-                                  labels = scales::percent_format(accuracy = 1)) +
+                                  labels = seq(0, 100, 10)) + # scales::percent_format(accuracy = 1)) +
       ggplot2::coord_cartesian(xlim = c(0, 1))
   }
   
