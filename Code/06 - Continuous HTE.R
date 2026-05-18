@@ -399,7 +399,7 @@ for (nr_analysis in 1:2) {
 
 # compute figures and tables
 HTE_table <- data.frame()
-for (nr_analysis in 1:2) {
+for (nr_analysis in 2:1) {
   for (effect_modifier in c("age", "pred_risk")) {
     # create histogram of variable stratified by treatment
     analysis_data <- eval(parse(text = data_sets[nr_analysis]))
@@ -468,7 +468,7 @@ for (nr_analysis in 1:2) {
           ggplot2::scale_x_continuous(
             limits = c(0, 1),
             breaks = seq(0, 1, 0.1),
-            labels = scales::percent_format(accuracy = 1)
+            labels = seq(0, 100, 10) # scales::percent_format(accuracy = 1)
           )
       }
       
@@ -533,13 +533,27 @@ for (nr_analysis in 1:2) {
       ifelse(
         nr_analysis == 1,
         "Main/Figure_3.png",
-        "Supplemental/Figure_S7_DCS.png"
+        "Supplemental/Figure_S8_DCS.png"
       )
     ),
     width = 20,
     height = 15,
     dpi = 300
   )
+  
+  # save ERA figure
+  if (nr_analysis == 1){
+    ggplot2::ggsave(
+      plot = age_RD_plot | pred_risk_RD_plot,
+      filename = paste0(
+        results_path,
+        "Other/Figure_ERA_HTE.png"
+      ),
+      width = 9,
+      height = 7,
+      dpi = 300
+    )  
+  }
 }
 
 # save table
