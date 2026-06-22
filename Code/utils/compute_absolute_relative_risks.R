@@ -764,11 +764,14 @@ compute_HTE <- function(data,
   data <- copy(data)
   data[, `:=`
        (
-         effect_modifier = get(effect_modifier),
+         effect_modifier = as.numeric(get(effect_modifier)),
          trt = as.numeric(trt) - 1,
          time = get(time2event_var),
          event = get(event_var)
        )]
+  # if (effect_modifier == "female") {
+  #   data[, effect_modifier := effect_modifier - 1]
+  # }
   
   # 1. Fit model using rms (ensures rcs is handled correctly)
   out <- paste0("survival::Surv(", time2event_var, ", ", event_var, ") ~ trt")

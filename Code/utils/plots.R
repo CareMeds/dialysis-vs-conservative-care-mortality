@@ -544,6 +544,7 @@ get_metric_positions <- function(n) {
 
 # create effect plot of benefit versus risk
 effect_plot <- function(estimates_df,
+                        effect_modifier,
                         y_middle,
                         measure,
                         y_min_RD = -70,
@@ -598,7 +599,7 @@ effect_plot <- function(estimates_df,
       color = "black"
     ) +
     ggplot2::scale_y_continuous(limits = c(y_min, y_max), breaks = y_breaks) +
-    ggplot2::labs(x = NULL,
+    ggplot2::labs(x = ifelse(effect_modifier == "age", "Age in years", "Predicted 2-year mortality risk (%)"),
                   y = ifelse(
                     measure == "RD",
                     "Risk difference in %",
@@ -611,8 +612,8 @@ effect_plot <- function(estimates_df,
       panel.background = ggplot2::element_rect(fill = "white", color = NA),
       plot.background = ggplot2::element_rect(fill = "white", color = NA),
       text = ggplot2::element_text(size = 18),
-      axis.text.x = ggplot2::element_blank(),
-      axis.title.x = ggplot2::element_blank(),
+      axis.ticks.x = ggplot2::element_line(color = "black", linewidth = 0.5),
+      axis.line.x = ggplot2::element_line(color = "black", linewidth = 0.5),
       axis.ticks.y = ggplot2::element_line(color = "black", linewidth = 0.5),
       axis.line.y = ggplot2::element_line(color = "black", linewidth = 0.5)
     ) +
