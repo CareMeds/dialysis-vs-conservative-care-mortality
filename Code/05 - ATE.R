@@ -135,20 +135,9 @@ ggplot2::ggsave(
     heights = c(3, 1),
     align = "v"
   ),
-  filename = paste0(results_path, "Main/Figure_1.png"),
+  filename = paste0(results_path, "Main/Figure_1.pdf"),
   width = 6,
   height = 6,
-  dpi = 600
-)
-
-# Create Figures
-ggplot2::ggsave(
-  plot = out_KM_event_death_2y_IPTW$KM_plot +
-    ggplot2::theme(legend.position = c(0.05, 0.05),
-                   legend.justification = c(0, 0)),
-  filename = paste0(results_path, "Other/Figure_ERA_KM.png"),
-  width = 5,
-  height = 4,
   dpi = 600
 )
 

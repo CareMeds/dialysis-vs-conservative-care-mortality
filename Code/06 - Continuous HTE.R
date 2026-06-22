@@ -265,9 +265,15 @@ openxlsx::write.xlsx(summmarized_table,
 ################################################################################
 ### Continuous HTE
 ################################################################################
-data_sets <- c("baseline", "baseline[Davies_score >= 2]")
 # probabilities between 40% and 90% mortality risk
 p_range <- c(0.2, 0.4, 0.9)
+
+# set names of metrics
+names_metrics <- c("RD", "dRMST", "RR", "HR") 
+
+# set subgroups
+data_sets <- c("baseline", "baseline[Davies_score >= 2]")
+
 for (nr_analysis in 1:2) {
   cat("Perform analysis on",
       ifelse(nr_analysis == 1, "full data\n", "Davies >= 2 data\n"))
@@ -327,7 +333,21 @@ for (nr_analysis in 1:2) {
       event_var = outcome_var,
       time2event_var = time2outcome_var,
       effect_modifier = "age",
-      effect_modifier_range = seq(65, 95, 1),
+      effect_modifier_range = seq(65, 90, 1),
+      add_interaction = TRUE,
+      test_relative_HTE = show_test
+    )
+    
+    # compute HTE across sex
+    show_test <- ifelse(B == 1, TRUE, FALSE)
+    sex_df <- compute_HTE(
+      data = bootstrap,
+      unit = unit,
+      horizon = horizon,
+      event_var = outcome_var,
+      time2event_var = time2outcome_var,
+      effect_modifier = "female",
+      effect_modifier_range = c(1, 2), # as.numeric() creates 1 and 2
       add_interaction = TRUE,
       test_relative_HTE = show_test
     )
@@ -356,27 +376,31 @@ for (nr_analysis in 1:2) {
                                                                        lp = pred_risk_df$effect_modifier_range)
       summary(pred_risk_df$effect_modifier_range)
       
-      # original sample
-      age_RD <- age_df[, c("effect_modifier_range", "RD")]
-      age_RR <- age_df[, c("effect_modifier_range", "RR")]
-      age_dRMST <- age_df[, c("effect_modifier_range", "dRMST")]
-      age_HR <- age_df[, c("effect_modifier_range", "HR")]
-      p_value_age <- unique(age_df$p_for_HTE)
-      p_value_age <- ifelse(p_value_age < 0.001, "<0.001", sprintf("%.3f", p_value_age))
-      
-      pred_risk_RD <- pred_risk_df[, c("effect_modifier_range", "RD")]
-      pred_risk_RR <- pred_risk_df[, c("effect_modifier_range", "RR")]
-      pred_risk_dRMST <- pred_risk_df[, c("effect_modifier_range", "dRMST")]
-      pred_risk_HR <- pred_risk_df[, c("effect_modifier_range", "HR")]
-      p_value_pred_risk <- unique(pred_risk_df$p_for_HTE)
-      p_value_pred_risk <- ifelse(p_value_pred_risk < 0.001, "<0.001", sprintf("%.3f", p_value_pred_risk))
-      
+      # create seperate dt for each estimate
+      dfs <- list(age = age_df, pred_risk = pred_risk_df, sex = sex_df)
+      for (df_name in names(dfs)) {
+        # set colnames of dt to effect_modifier_range
+        for (metric in names_metrics) {
+          var_name <- paste0(df_name, "_", metric)
+          assign(var_name, dfs[[df_name]][, c("effect_modifier_range", metric)])
+        }
+        
+        # set p-value
+        p_raw <- unique(dfs[[df_name]]$p_for_HTE)
+        p_fmt <- ifelse(p_raw < 0.001, "<0.001", sprintf("%.3f", p_raw))
+        assign(paste0("p_value_", df_name), p_fmt)
+      }
     } else{
       # bootstrapped sample
       age_RD[, paste0("boot_", B - 1)] <- age_df$RD
       age_RR[, paste0("boot_", B - 1)] <- age_df$RR
       age_dRMST[, paste0("boot_", B - 1)] <- age_df$dRMST
       age_HR[, paste0("boot_", B - 1)] <- age_df$HR
+      
+      sex_RD[, paste0("boot_", B - 1)] <- sex_df$RD
+      sex_RR[, paste0("boot_", B - 1)] <- sex_df$RR
+      sex_dRMST[, paste0("boot_", B - 1)] <- sex_df$dRMST
+      sex_HR[, paste0("boot_", B - 1)] <- sex_df$HR
       
       pred_risk_RD[, paste0("boot_", B - 1)] <- pred_risk_df$RD
       pred_risk_RR[, paste0("boot_", B - 1)] <- pred_risk_df$RR
@@ -385,22 +409,20 @@ for (nr_analysis in 1:2) {
     }
   }
   
-  assign(paste0("age_RD_", nr_analysis), age_RD)
-  assign(paste0("age_RR_", nr_analysis), age_RR)
-  assign(paste0("age_dRMST_", nr_analysis), age_dRMST)
-  assign(paste0("age_HR_", nr_analysis), age_HR)
-  assign(paste0("p_value_age_", nr_analysis), p_value_age)
-  assign(paste0("pred_risk_RD_", nr_analysis), pred_risk_RD)
-  assign(paste0("pred_risk_RR_", nr_analysis), pred_risk_RR)
-  assign(paste0("pred_risk_dRMST_", nr_analysis), pred_risk_dRMST)
-  assign(paste0("pred_risk_HR_", nr_analysis), pred_risk_HR)
-  assign(paste0("p_value_pred_risk_", nr_analysis), p_value_pred_risk)
+  # add nr_analysis to dt
+  for (df_name in names(dfs)) {
+    for (metric in names_metrics) {
+      var_name <- paste0(df_name, "_", metric)
+      assign(paste0(var_name, "_", nr_analysis), get(var_name))
+    }
+    assign(paste0("p_value_", df_name, "_", nr_analysis), get(paste0("p_value_", df_name)))
+  }
 }
 
 # compute figures and tables
 HTE_table <- data.frame()
-for (nr_analysis in 2:1) {
-  for (effect_modifier in c("age", "pred_risk")) {
+for (nr_analysis in 1:2) {
+  for (effect_modifier in c("age", "sex", "pred_risk")) {
     # create histogram of variable stratified by treatment
     analysis_data <- eval(parse(text = data_sets[nr_analysis]))
     analysis_data$lp_risk <- predict(risk_model, newdata = analysis_data)
@@ -414,7 +436,7 @@ for (nr_analysis in 2:1) {
       manual_colors = manual_colors
     )
     
-    for (measure in c("RD", "dRMST", "RR", "HR")) {
+    for (measure in names_metrics) {
       # legend of histogram
       if (effect_modifier == "pred_risk" & measure == "dRMST") {
         # add legend title to dRMST plot
@@ -443,42 +465,6 @@ for (nr_analysis in 2:1) {
                                                          probs = 0.975,
                                                          na.rm = TRUE)
       
-      # make effect plot
-      effect_plot_out <- effect_plot(
-        estimates_df = estimates_df,
-        y_middle = ifelse(measure == "HR" | measure == "RR", 1, 0),
-        measure = measure,
-        y_min_RD = -70,
-        y_max_RD = ifelse(nr_analysis == 1, 21, 56),
-        y_min_RR = 0,
-        y_max_RR = ifelse(nr_analysis == 1, 1.3, 1.8),
-        y_min_dRMST = ifelse(nr_analysis == 1, -3, -8),
-        y_max_dRMST = 10,
-        y_min_HR = 0,
-        y_max_HR = ifelse(nr_analysis == 1, 1.3, 1.8)
-      )
-      
-      # control x-axis of effect plot
-      if (effect_modifier == "age") {
-        effect_plot_out <- effect_plot_out +
-          ggplot2::scale_x_continuous(limits = c(60, 100),
-                                      breaks = seq(60, 100, 5))
-      } else{
-        effect_plot_out <- effect_plot_out +
-          ggplot2::scale_x_continuous(
-            limits = c(0, 1),
-            breaks = seq(0, 1, 0.1),
-            labels = seq(0, 100, 10) # scales::percent_format(accuracy = 1)
-          )
-      }
-      
-      # combine the effect and histogram
-      combined_effect_hist <- (effect_plot_out / hist_stratified) +
-        plot_layout(heights = c(1, 0.2))
-      
-      assign(paste0(effect_modifier, "_", measure, "_plot"),
-             combined_effect_hist)
-      
       # save table
       if (effect_modifier == "age") {
         sel_rows <- c(
@@ -486,7 +472,13 @@ for (nr_analysis in 2:1) {
           which(estimates_df$effect_modifier_range == 90)
         )
         range <- estimates_df[sel_rows, "effect_modifier_range"]
-      } else{
+      } else if (effect_modifier == "sex") {
+        sel_rows <- c(
+          which(estimates_df$effect_modifier_range == 1),
+          which(estimates_df$effect_modifier_range == 2)
+        )
+        range <- estimates_df[sel_rows, "effect_modifier_range"]
+      } else if (effect_modifier == "pred_risk") {
         sel_rows <- c(
           which(estimates_df$effect_modifier_range == p_range[2]),
           which(estimates_df$effect_modifier_range == p_range[3])
@@ -515,6 +507,52 @@ for (nr_analysis in 2:1) {
       } else{
         HTE_tab <- cbind(HTE_tab, est, CI)
       }
+      
+      # make effect plot
+      if (effect_modifier != "sex") {
+        effect_plot_out <- effect_plot(
+          estimates_df = estimates_df,
+          effect_modifier = effect_modifier,
+          y_middle = ifelse(measure == "HR" | measure == "RR", 1, 0),
+          measure = measure,
+          y_min_RD = -70,
+          y_max_RD = ifelse(nr_analysis == 1, 21, 56),
+          y_min_RR = 0,
+          y_max_RR = ifelse(nr_analysis == 1, 1.3, 1.8),
+          y_min_dRMST = ifelse(nr_analysis == 1, -3, -8),
+          y_max_dRMST = 10,
+          y_min_HR = 0,
+          y_max_HR = ifelse(nr_analysis == 1, 1.3, 1.8)
+        )
+        
+        # control x-axis of effect plot
+        effect_plot_out <- effect_plot_out + 
+          ggplot2::theme(
+            axis.title.x = ggplot2::element_blank(),
+            axis.text.x = ggplot2::element_blank(),
+            axis.ticks.x = ggplot2::element_blank(),
+            axis.line.x = ggplot2::element_blank()
+          )
+        if (effect_modifier == "age") {
+          effect_plot_out <- effect_plot_out +
+            ggplot2::scale_x_continuous(limits = c(60, 100),
+                                        breaks = seq(60, 100, 5))
+        } else{
+          effect_plot_out <- effect_plot_out +
+            ggplot2::scale_x_continuous(
+              limits = c(0, 1),
+              breaks = seq(0, 1, 0.1),
+              labels = seq(0, 100, 10) # scales::percent_format(accuracy = 1)
+            )
+        }
+        
+        # combine the effect and histogram
+        combined_effect_hist <- (effect_plot_out / hist_stratified) +
+          plot_layout(heights = c(1, 0.2))
+        
+        assign(paste0(effect_modifier, "_", measure, "_plot"),
+               combined_effect_hist)
+      }
     }
     HTE_table <- rbind(HTE_table, HTE_tab)
   }
@@ -532,7 +570,7 @@ for (nr_analysis in 2:1) {
       results_path,
       ifelse(
         nr_analysis == 1,
-        "Main/Figure_3.png",
+        "Main/Figure_3.pdf",
         "Supplemental/Figure_S8_DCS.png"
       )
     ),
@@ -540,27 +578,17 @@ for (nr_analysis in 2:1) {
     height = 15,
     dpi = 300
   )
-  
-  # save ERA figure
-  if (nr_analysis == 1){
-    ggplot2::ggsave(
-      plot = age_RD_plot | pred_risk_RD_plot,
-      filename = paste0(
-        results_path,
-        "Other/Figure_ERA_HTE.png"
-      ),
-      width = 9,
-      height = 7,
-      dpi = 300
-    )  
-  }
 }
 
 # save table
 HTE_table_final <- data.frame(
   HTE_table,
-  c(p_value_age_1, "", p_value_pred_risk_1, "",
-    p_value_age_2, "", p_value_pred_risk_2, "")
+  c(p_value_age_1, "", 
+    p_value_sex_1, "",
+    p_value_pred_risk_1, "",
+    p_value_age_2, "", 
+    p_value_sex_2, "",
+    p_value_pred_risk_2, "")
 )
 colnames(HTE_table_final) <- c("Effect modifier",
                                "RD",
