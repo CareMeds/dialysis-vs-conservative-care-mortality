@@ -444,7 +444,7 @@ for (comorbidity in Davies_comorbidities) {
 age_80_comorbidities[, Davies_score := rowSums(.SD, na.rm = TRUE), .SDcols = Davies_comorbidities]
 
 ################################################################################
-### Remove visits after palliative care
+### Remove visits after palliative care or nursing home admission
 ################################################################################
 # extract information on palliative care
 outpatient <- UT_R_PAR_OV_123160_2023
