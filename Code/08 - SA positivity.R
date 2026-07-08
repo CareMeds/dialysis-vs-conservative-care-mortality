@@ -67,6 +67,7 @@ for (trim_meth in trim_meths) {
     # Apply trimming and reweight IPTW
     baseline_updated <- trim_propensity_scores(
       data = baseline_untrimmed,
+      id_name = id_name,
       trt_var = trt_var,
       w_meth = "IPTW",
       model_PS = model_PS,
@@ -81,6 +82,7 @@ for (trim_meth in trim_meths) {
   # Identify non-overlap patients even after trimming
   nonoverlap <- trim_propensity_scores(
     data = baseline_updated,
+    id_name = id_name,
     trt_var = trt_var,
     w_meth = "unweighted",
     model_PS = model_PS,

@@ -208,6 +208,8 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
   aki:rms::pol(egfr2021, 2)
   
 # Create IPTW weights on full cohort
+id_name <- "LOPNR"
+trt_var <- "trt"
 out_weights <- create_weights(
   data = baseline,
   id_name = id_name,
@@ -221,8 +223,6 @@ out_weights <- create_weights(
 baseline <- out_weights$data
 
 # check if SMDs after weighting below 0.1
-id_name <- "LOPNR"
-trt_var <- "trt"
 table_one <- create_baseline_table(
   data = baseline,
   id_name = id_name,
