@@ -3,12 +3,10 @@
 ### PART 4 - Descriptive statistics
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
 set.seed(1)
-
-# set directory
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -23,9 +21,7 @@ source("Code/utils/plots.R")
 source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 
-################################################################################
-### Load data ##################################################################
-################################################################################
+# load data
 load("Data/cohort_with_weights.Rdata")
 load("Data/merged_ckd.Rdata")
 
@@ -238,8 +234,15 @@ table_full_elig <- create_baseline_table(
   tableRowLabels = row_labels
 )$raw_table
 
-elig_cohort$sw_IPSW <- 1
-elig_cohort[elig_cohort$S == 1, "sw_IPSW"] <- baseline$sw_IPSW
+# UPDATE JULY 2026
+# elig_cohort$sw_IPSW <- 1
+# elig_cohort[elig_cohort$S == 1, "sw_IPSW"] <- baseline$sw_IPSW
+
+# set sw_ISPW to 1 for those not in baseline, and to IPSW for those in baseline
+idx <- match(elig_cohort$LOPNR, baseline$LOPNR) # gives NA for S = 0 rows
+elig_cohort[, sw_IPSW := data.table::fifelse(is.na(idx), 1, baseline$sw_IPSW[idx])]
+
+# create table for eligible cohort after IPSW
 table_full_elig_IPSW <- create_baseline_table(
   data = elig_cohort,
   id_name = "LOPNR",

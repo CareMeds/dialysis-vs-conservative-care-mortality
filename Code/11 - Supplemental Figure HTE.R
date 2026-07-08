@@ -3,11 +3,10 @@
 ### PART 11 - Illustration relationship between RD, RR, RMST, and HR
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-
-# set directory
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )

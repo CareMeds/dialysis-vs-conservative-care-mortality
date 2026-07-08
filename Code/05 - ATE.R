@@ -3,11 +3,10 @@
 ### PART 5 - Average treatment effect
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-
-# set directory
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -27,9 +26,7 @@ source("Code/utils/weighting.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
-################################################################################
-### Load data ##################################################################
-################################################################################
+# load data
 load("Data/cohort_with_weights.Rdata")
 
 ################################################################################
@@ -89,6 +86,7 @@ for (w_meth in w_meths) {
   # compute estimates
   out_est <- compute_estimates_with_CI(
     data = baseline,
+    id_name = id_name,
     unit = unit,
     horizon = horizon,
     elig_cohort = elig_cohort,

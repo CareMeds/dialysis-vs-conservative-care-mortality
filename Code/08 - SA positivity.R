@@ -1,13 +1,12 @@
 ################################################################################
 ### Decision for dialysis versus conservative care
-### PART 6 - Sensitivity analysis for positivity
+### PART 8 - Sensitivity analysis for positivity
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-
-# set directory
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -27,23 +26,19 @@ source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
-################################################################################
-### Load data ##################################################################
-################################################################################
+# load data
 load("Data/cohort_with_prob.Rdata")
 
-# Define main survival model formula
-survival_model <- survival::Surv(time2event_death_2y, event_death_2y) ~ trt
-
-################################################################################
-### Save untrimmed data
-################################################################################
+# Save untrimmed data
 baseline_untrimmed <- baseline
 rm(baseline)
 
 ################################################################################
 ### Sensitivity anaysis for non-positivity, investigate non-overlapping region of PS
 ################################################################################
+# Define main survival model formula
+survival_model <- survival::Surv(time2event_death_2y, event_death_2y) ~ trt
+
 trim_meths <- c("unweighted", "IPTW", "overlap", "Crump", "Stürmer", "Walker")
 
 # Initialize summary table

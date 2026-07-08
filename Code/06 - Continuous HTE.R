@@ -1,13 +1,12 @@
 ################################################################################
 ### Decision for dialysis versus conservative care
-### PART 8 - Continuous heterogeneous treatment effect estimation
+### PART 6 - Continuous heterogeneous treatment effect estimation
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-
-# set directory
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -29,17 +28,15 @@ source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
-# perform internal validation 
-validate <- FALSE
-
-################################################################################
-### Load data ##################################################################
-################################################################################
+# load data
 load("Data/cohort_with_models.Rdata")
 
 ################################################################################
 ### Internal 2-year time-to-event risk model
 ################################################################################
+# perform internal validation 
+validate <- FALSE
+
 # make outcome for elig cohort
 elig_Surv <- survival::Surv(elig_cohort$time2event_death_2y, elig_cohort$event_death_2y)
 
@@ -296,6 +293,7 @@ for (nr_analysis in 1:2) {
     # re-estimate weights
     bootstrap_reestimated <- create_weights(
       data = bootstrap,
+      id_name = id_name,
       model_PS = model_PS,
       w_meth = "IPTW",
       catvar = catvar,
@@ -333,7 +331,7 @@ for (nr_analysis in 1:2) {
       event_var = outcome_var,
       time2event_var = time2outcome_var,
       effect_modifier = "age",
-      effect_modifier_range = seq(65, 90, 1),
+      effect_modifier_range = seq(65, 95, 1),
       add_interaction = TRUE,
       test_relative_HTE = show_test
     )

@@ -3,11 +3,10 @@
 ### PART - Competing risk analysis for time-to-dialysis
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/")
-
-# set directory
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -96,6 +95,7 @@ for (B in 1:n_bootstraps) {
   # compute IPTW on bootstrap
   out_weights <- create_weights(
     data = bootstrap,
+    id_name = id_name,
     model_PS = model_PS,
     w_meth = "IPTW",
     verbose = FALSE

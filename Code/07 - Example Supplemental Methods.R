@@ -1,12 +1,20 @@
-# remove, set directory, and load data
+################################################################################
+### Decision for dialysis versus conservative care
+### PART 7 - Example ITE calculation for random patient
+################################################################################
+
+# set-up
 rm(list = ls(all.names = TRUE))
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
-load("Data/cohort_with_prob.Rdata")
+set.seed(1)
 
 # load library
 library(data.table)
+
+# load data
+load("Data/cohort_with_prob.Rdata")
 
 ################################################################################
 ### select patient

@@ -3,13 +3,20 @@
 ### PART 1 - Apply eligibility criteria
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
-
-# load data
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
+
+# load libraries
+library(data.table)
+
+# load functions
+source("Code/utils/data_manipulation.R")
+
+# load data
 load("Data/merged_ckd.Rdata")
 load("Data/cleaned/snr_inpatient.Rdata")
 load("Data/cleaned/snr_outpatient.Rdata")
@@ -20,12 +27,6 @@ if (!new_diag) {
   load("Data/Davies_65_80.Rdata")
   load("Data/hiv_dementia.Rdata")
 }
-
-# load libraries
-library(data.table)
-
-# load functions
-source("Code/utils/data_manipulation.R")
 
 ################################################################################
 ### Add row for xth birthday for those who had visits before and after that birthdate

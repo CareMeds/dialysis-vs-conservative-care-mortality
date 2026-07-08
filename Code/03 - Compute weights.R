@@ -3,12 +3,10 @@
 ### PART 3 - Analysis
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
 knitr::opts_knit$set(root.dir = "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/")
 set.seed(1)
-
-# set directory
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
@@ -25,9 +23,7 @@ source("Code/utils/tables.R")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/compute_absolute_relative_risks.R")
 
-################################################################################
-### Load data ##################################################################
-################################################################################
+# load data
 load("Data/analysis_data_elig_cohort_new.Rdata")
 elig_cohort <- cohort_final
 load("Data/analysis_data_cohort_new.Rdata")
@@ -214,6 +210,7 @@ model_PS <- trt ~ rms::pol(age, 2) + age_cat +
 # Create IPTW weights on full cohort
 out_weights <- create_weights(
   data = baseline,
+  id_name = id_name,
   trt_var = trt_var,
   model_PS = model_PS,
   w_meth = "IPTW",
@@ -385,6 +382,7 @@ model_S <- update(model_PS, S ~ . - rms::pol(age, 2):vasodilator)
 for (w_meth in w_meths[-1]) {
   out_weights <- create_weights(
     data = baseline,
+    id_name = id_name,
     trt_var = trt_var,
     elig_cohort = elig_cohort,
     model_PS = model_PS,

@@ -3,27 +3,28 @@
 ### PART 2 - Coavariate and outcome derivation
 ################################################################################
 
-# remove history
+# set-up
 rm(list = ls(all.names = TRUE))
-
-# load data
+set.seed(1)
 setwd(
   "P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/"
 )
-load("Data/new_cohort.Rdata")
-load("Data/merged_ckd.Rdata")
-load("Data/cleaned/snr_inpatient.Rdata")
-load("Data/cleaned/snr_outpatient.Rdata")
-load("Data/cleaned/snr_lmed.Rdata")
-load("Data/cleaned/snr_death.Rdata")
+
+# load libraries
+library(data.table)
 
 # load functions
 pacman::p_load("dplyr", "tidyr", "readr", "lubridate", "stringr")
 source("Code/utils/data_manipulation.R")
 source("Code/utils/outcome_derivation.R")
 
-# load libraries
-library(data.table)
+# load data
+load("Data/new_cohort.Rdata")
+load("Data/merged_ckd.Rdata")
+load("Data/cleaned/snr_inpatient.Rdata")
+load("Data/cleaned/snr_outpatient.Rdata")
+load("Data/cleaned/snr_lmed.Rdata")
+load("Data/cleaned/snr_death.Rdata")
 
 # convert inpatient
 inpatient <- UT_R_PAR_SV_123160_2023
@@ -461,7 +462,7 @@ for (cohort_name in c("cohort", "elig_cohort")) {
   cohort_year <- cohort_nursing[, calendar_year := year(as.IDate(visit_date))]
   
   ################################################################################
-  ### Primary outcome all-cause mortality (5-year, 6-month)
+  ### Primary outcome all-cause mortality
   ################################################################################
   # Prepare datasets
   # All-cause death
