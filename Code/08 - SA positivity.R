@@ -158,6 +158,7 @@ for (trim_meth in trim_meths) {
   # compute estimates
   out_est <- compute_estimates_with_CI(
     data = baseline,
+    id_name = id_name,
     unit = unit,
     horizon = horizon,
     model_PS = model_PS,

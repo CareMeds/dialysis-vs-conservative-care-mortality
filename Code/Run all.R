@@ -40,5 +40,5 @@ source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conser
 # Sensitivity analysis for unmeasured confounding
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/10 - SA unmeasured confounding.R")
 
-# Illustate relative and absolute HTE
+# Illustation relative and absolute HTE
 source("P:/SCREAM2/SCREAM2_Research/Carolien Maas/Project Dialysis versus Conservative Care/Code/11 - Supplemental Figure HTE.R")
