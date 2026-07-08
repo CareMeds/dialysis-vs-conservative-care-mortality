@@ -388,20 +388,30 @@ compute_CI_at_multiple_times <- function(data,
     )
   ) %dorng% {
     tryCatch({
-      # Sample from dataset
-      d <- sample(1:nrow(data),
-                  size = nrow(data),
-                  replace = T)
-
-      # select patients
-      ds_b <- setDT(data[d, ])
+      # UPDATE JULY 2026
+      # # Sample from dataset
+      # d <- sample(1:nrow(data),
+      #             size = nrow(data),
+      #             replace = T)
+      # 
+      # # select patients
+      # ds_b <- setDT(data[d, ])
+      
+      # resample eligible cohort and baseline
+      if (w_meth %in% c("IPSW", "IPSW_IPTW")) {
+        elig_b <- setDT(elig_cohort[sample(.N, .N, replace = TRUE)])
+        ds_b   <- elig_b[S == 1]
+      } else {
+        elig_b <- elig_cohort
+        ds_b   <- setDT(data[sample(.N, .N, replace = TRUE)])
+      }
 
       # Compute absolute risks in weighted subpopulation
       output <- compute_risk_at_multiple_times(
         data = ds_b,
         id_name = id_name,
         horizon = horizon,
-        elig_cohort = elig_cohort,
+        elig_cohort = elig_b,
         model_PS = model_PS,
         model_S = model_S,
         event_var = event_var,
