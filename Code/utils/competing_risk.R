@@ -87,7 +87,7 @@ state_probabilities <- function(dt, horizon){
   RMST_11 <- sum(state_prob$P11 * diff(c(alltimes, horizon)))/30.5
   # Average time spent in dialysis in the next two years
   RMST_12 <- sum(state_prob$P12 * diff(c(alltimes, horizon)))/30.5
-  # Average time spent in the death state in the next two years
+  # Average time spent alive in the next two years
   RMST_13 <- sum((1-state_prob$P13) * diff(c(alltimes, horizon)))/30.5
   
   return(list(times = alltimes, 

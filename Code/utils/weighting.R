@@ -24,6 +24,7 @@ safe_sbw <- function(...) {
 
 # obtain weights
 create_weights <- function(data,
+                           id_name,
                            trt_var = "trt", 
                            elig_cohort = NULL,
                            model_PS,
@@ -32,6 +33,10 @@ create_weights <- function(data,
                            catvar = NULL,
                            contvar = NULL,
                            verbose = TRUE) {
+    # extract data
+  data <- copy(data)
+  data$trt <- data[, ..trt_var]
+  
   # Remove categorical variables with a single level from the ps formula
   all_vars <- all.vars(model_PS)[-1]  # drop outcome
   
@@ -76,27 +81,46 @@ create_weights <- function(data,
                            (pred_num / data$ps))
   
     # predict probability of being in eligible cohort for each individual in the analysis data
-    if (w_meth == "IPSW") {
+    if (w_meth == "IPSW" | w_meth == "IPSW_IPTW") {
       # fit selection model (as you already did)
       fit_S <- stats::glm(model_S, family = binomial(), data = elig_cohort)
       
       # get P(S = 1 | X) for everyone
-      pred_S <- stats::predict(fit_S, type = "response")
+      pred_S <- stats::predict(fit_S, newdata = elig_cohort, type = "response")
       
-      # use weights only to those with the decision (S == 1)
-      PS_sel <- pred_S[elig_cohort$S == 1]
+      # UPDATE JULY 2026
+      # # use weights only to those with the decision (S == 1)
+      # PS_sel <- pred_S[elig_cohort$S == 1]
+      # 
+      # # create Dahabreh's stabilized generalizability weights 
+      # IPSW_weights <- 1 / PS_sel
       
-      # create Dahabreh's stabilized generalizability weights 
-      IPSW_weights <- 1 / PS_sel
+      # one weight per patient, keyed by ID
+      IPSW_dt <- data.table::data.table(
+        LOPNR = elig_cohort[[id_name]][elig_cohort$S == 1],
+        IPSW = 1 / pred_S[elig_cohort$S==1]
+      )
+      
+      # attach to the analysis data by ID
+      order_weights <- match(data[[id_name]], IPSW_dt$LOPNR)
+      if (anyNA(order_weights)) stop("IPSW: analysis-cohort IDs missing from eligibility cohort")
+      IPSW_weights <- IPSW_dt$IPSW[order_weights]
     }
     
-    if (w_meth == "IPTW"){
-      data$w <- IPTW_weights
-    } else if (w_meth == "IPSW"){
-      data$w <- IPSW_weights
-    } else if (w_meth == "IPSW_IPTW"){
-      data$w <- data$sw_IPTW * data$sw_IPSW
-    }
+    # UPDATE JULY 2026
+    # if (w_meth == "IPTW"){
+    #   data$w <- IPTW_weights
+    # } else if (w_meth == "IPSW"){
+    #   data$w <- IPSW_weights
+    # } else if (w_meth == "IPSW_IPTW"){
+    #   data$w <- data$sw_IPTW * data$sw_IPSW
+    # }
+    
+    # final weight
+    data[, w := switch(w_meth,
+                       IPTW    = IPTW_weights,
+                       IPSW    = IPSW_weights,
+                       IPSW_IPTW = IPTW_weights * IPSW_weights)]
   } else if (w_meth == "SMR_ATT") {
     # STANDARDIZED MORTALITY RATIO FOR ATT
     data$w <- ifelse(data$trt == 0, (data$ps / (1 - data$ps)), 1)
@@ -213,6 +237,7 @@ create_weights <- function(data,
 }
 
 trim_propensity_scores <- function(data,
+                                   id_name,
                                    trt_var = "trt", 
                                    w_meth = "unweighted",
                                    model_PS,
@@ -226,6 +251,7 @@ trim_propensity_scores <- function(data,
   # compute propensity scores
   data$ps <- create_weights(
       data = data,
+      id_name = id_name,
       model_PS = model_PS,
       w_meth = w_meth,
       catvar = catvar,
@@ -287,6 +313,7 @@ trim_propensity_scores <- function(data,
     # re-estimate weights in overlap region
     overlap <- create_weights(
       data = overlap,
+      id_name = id_name,
       model_PS = model_PS,
       w_meth = w_meth,
       catvar = catvar,

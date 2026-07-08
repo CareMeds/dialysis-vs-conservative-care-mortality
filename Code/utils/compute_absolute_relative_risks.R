@@ -1,4 +1,5 @@
 compute_estimates_with_CI <- function(data,
+                                      id_name,
                                       unit = "months",
                                       horizon,
                                       elig_cohort = NULL,
@@ -17,6 +18,7 @@ compute_estimates_with_CI <- function(data,
   # compute point estimates at multiple times
   est_full <- compute_risk_at_multiple_times(
     data = data,
+    id_name = id_name,
     horizon = horizon,
     elig_cohort = elig_cohort,
     model_PS = model_PS,
@@ -31,13 +33,14 @@ compute_estimates_with_CI <- function(data,
     contvar = contvar
   )
   
-  # compute point estimat
+  # compute point estimate
   est <- est_full |>
     dplyr::filter(time == round(horizon))
   
   # compute 95% CI at multiple time points
   est_CI_full <- compute_CI_at_multiple_times(
     data = data,
+    id_name = id_name,
     horizon = horizon,
     elig_cohort = elig_cohort,
     model_PS = model_PS,
@@ -105,6 +108,7 @@ compute_estimates_with_CI <- function(data,
 
 # compute absolute and relative risks at multiple time points
 compute_risk_at_multiple_times <- function(data,
+                                           id_name,
                                            horizon,
                                            elig_cohort,
                                            model_PS,
@@ -121,6 +125,7 @@ compute_risk_at_multiple_times <- function(data,
   if (trim_meth != "no_trimming") {
     data <- trim_propensity_scores(
       data = data,
+      id_name = id_name,
       trt_var = trt_var,
       trim_meth = trim_meth,
       w_meth = "IPTW",
@@ -133,6 +138,7 @@ compute_risk_at_multiple_times <- function(data,
   ### Compute absolute risks ###################################################
   dat.table <- compute_absolute_risk_at_multiple_times(
     data = data,
+    id_name = id_name,
     elig_cohort = elig_cohort,
     event_var = event_var,
     competing_event_var = competing_event_var,
@@ -147,10 +153,16 @@ compute_risk_at_multiple_times <- function(data,
   ) |>
     # Pivot data to wide format, only keeping strata and estimate
     dplyr::select(strata, time, estimate) |>
-    tidyr::pivot_wider(names_from = strata, values_from = estimate)
+    # UPDATE JULY 2026
+    # take the trt_level from the stratum label
+    dplyr::mutate(trt_level = sub(".*=", "", as.character(strata))) |>
+    dplyr::select(time, trt_level, estimate) |>
+    tidyr::pivot_wider(names_from = trt_level, 
+                       values_from = estimate,
+                       names_prefix = "R") # add R to make R0 and R1
   
   # set column names
-  colnames(dat.table) <- c("time", "R0", "R1")
+  # colnames(dat.table) <- c("time", "R0", "R1")
   
   ### Compute relative risks ###################################################
   # define model variable
@@ -172,6 +184,7 @@ compute_risk_at_multiple_times <- function(data,
     # adjusted analysis
     weights_meth <- create_weights(
       data = data,
+      id_name = id_name,
       elig_cohort = elig_cohort,
       model_PS = model_PS,
       model_S = model_S,
@@ -218,6 +231,7 @@ compute_risk_at_multiple_times <- function(data,
 
 # compute absolute stimates at multiple time points
 compute_absolute_risk_at_multiple_times <- function(data,
+                                                    id_name,
                                                     elig_cohort,
                                                     event_var,
                                                     competing_event_var,
@@ -252,6 +266,7 @@ compute_absolute_risk_at_multiple_times <- function(data,
   if (w_meth != "unweighted") {
     out_weights <- create_weights(
       data = data,
+      id_name = id_name,
       elig_cohort = elig_cohort,
       model_PS = model_PS,
       model_S = model_S,
@@ -330,175 +345,7 @@ compute_absolute_risk_at_multiple_times <- function(data,
 
 # Compute confidence interval of measures at all time points
 compute_CI_at_multiple_times <- function(data,
-                                         horizon,
-                                         elig_cohort,
-                                         model_PS,
-                                         model_S = NULL,
-                                         event_var,
-                                         competing_event_var,
-                                         time2event_var,
-                                         trt_var,
-                                         w_meth,
-                                         weights_meth,
-                                         trim_meth = "no_trimming",
-                                         catvar,
-                                         contvar,
-                                         n_bootstraps,
-                                         bootstrap_seed = 123) {
-  cols_to_check <- c("R0", "R1", "RD", "RR", "RMST0", "RMST1", "dRMST", "HR")
-  
-  num_cores <- parallel::detectCores() - 1
-  cl <- parallel::makeCluster(num_cores)
-  doParallel::registerDoParallel(cl)
-  registerDoRNG(seed = bootstrap_seed)
-  
-  bootsamps <- foreach::foreach(
-    boot = 1:n_bootstraps,
-    .packages = c("dplyr", "data.table"),
-    .export = c(
-      "filter_terms_from_formula",
-      "create_weights",
-      "trim_propensity_scores",
-      "compute_risk_at_multiple_times",
-      "compute_absolute_risk_at_multiple_times"
-    )
-  ) %dorng% {
-    tryCatch({
-      d <- sample(1:nrow(data), size = nrow(data), replace = TRUE)
-      ds_b <- setDT(data[d, ])
-      
-      output <- compute_risk_at_multiple_times(
-        data = ds_b,
-        horizon = horizon,
-        elig_cohort = elig_cohort,
-        model_PS = model_PS,
-        model_S = model_S,
-        event_var = event_var,
-        competing_event_var = competing_event_var,
-        time2event_var = time2event_var,
-        trt_var = trt_var,
-        w_meth = w_meth,
-        trim_meth = trim_meth,
-        catvar = catvar,
-        contvar = contvar
-      )
-      
-      # --- NEW: Identify exactly which columns and rows have non-finite values ---
-      invalid_detail <- output |>
-        dplyr::mutate(row_index = dplyr::row_number()) |>
-        tidyr::pivot_longer(
-          cols = dplyr::all_of(cols_to_check),
-          names_to = "column",
-          values_to = "value"
-        ) |>
-        dplyr::filter(!is.finite(value)) |>
-        dplyr::select(row_index, time, column, value)
-      
-      if (nrow(invalid_detail) > 0) {
-        return(list(
-          error = sprintf(
-            "Boot %d: Non-finite values in %d cell(s) across column(s): %s",
-            boot,
-            nrow(invalid_detail),
-            paste(unique(invalid_detail$column), collapse = ", ")
-          ),
-          invalid_cells = invalid_detail,   # exact rows/cols that are bad
-          output = output                   # full output for inspection
-        ))
-      }
-      
-      # Tag successful bootstraps with their index for traceability
-      output$boot_id <- boot
-      output
-      
-    }, error = function(e) {
-      return(list(
-        error = paste0("Boot ", boot, " crashed: ", e$message),
-        invalid_cells = NULL,
-        output = NULL
-      ))
-    })
-  }
-  
-  parallel::stopCluster(cl)
-  registerDoSEQ()
-  
-  ##############################################################################
-  ### Error reporting — now with per-column NA summaries and partial output
-  ##############################################################################
-  errors   <- Filter(function(x)  "error" %in% names(x), bootsamps)
-  successes <- Filter(function(x) !"error" %in% names(x), bootsamps)
-  
-  n_failed  <- length(errors)
-  n_total   <- n_bootstraps
-  
-  if (n_failed > 0) {
-    message(sprintf("\n--- Bootstrap Failure Report: %d / %d failed ---", n_failed, n_total))
-    
-    for (err in errors) {
-      message("\n", err$error)
-      
-      # Print per-column breakdown of non-finite values if available
-      if (!is.null(err$invalid_cells) && nrow(err$invalid_cells) > 0) {
-        message("  Non-finite breakdown by column:")
-        col_summary <- err$invalid_cells |>
-          dplyr::group_by(column) |>
-          dplyr::summarise(
-            n_bad_rows   = dplyr::n(),
-            bad_at_times = paste(sort(unique(time)), collapse = ", "),
-            value_types  = paste(unique(
-              dplyr::case_when(
-                is.nan(value) ~ "NaN",
-                is.infinite(value) ~ ifelse(value > 0, "Inf", "-Inf"),
-                is.na(value) ~ "NA"
-              )
-            ), collapse = ", "),
-            .groups = "drop"
-          )
-        print(as.data.frame(col_summary), row.names = FALSE)
-        
-        message("  Full output from this bootstrap:")
-        print(as.data.frame(err$output))
-      }
-    }
-    
-    # Aggregated summary across all failures
-    message("\n--- Aggregated column failure counts across all failed bootstraps ---")
-    all_invalid_cells <- dplyr::bind_rows(lapply(errors, `[[`, "invalid_cells"))
-    if (nrow(all_invalid_cells) > 0) {
-      agg_summary <- all_invalid_cells |>
-        dplyr::group_by(column) |>
-        dplyr::summarise(
-          total_bad_cells = dplyr::n(),
-          n_boots_affected = dplyr::n_distinct(..1),  # time used as proxy; see note
-          .groups = "drop"
-        ) |>
-        dplyr::arrange(dplyr::desc(total_bad_cells))
-      print(as.data.frame(agg_summary), row.names = FALSE)
-    }
-  }
-  
-  ##############################################################################
-  ### Combine successes and compute CIs
-  ##############################################################################
-  totalboot <- dplyr::bind_rows(successes) |>
-    dplyr::arrange(time)
-  
-  totalboot <- totalboot[!is.na(totalboot$time), ]
-  
-  totalboot <- totalboot |>
-    dplyr::group_by(time) |>
-    dplyr::reframe(dplyr::across(
-      .cols = dplyr::all_of(cols_to_check),
-      ~ quantile(.x, probs = c(0.025, 0.975), na.rm = TRUE)
-    ),
-    name = c("conf.low", "conf.high")) |>
-    dplyr::ungroup()
-  
-  return(totalboot)
-}
-
-compute_CI_at_multiple_times <- function(data,
+                                         id_name,
                                          horizon,
                                          elig_cohort,
                                          model_PS,
@@ -552,6 +399,7 @@ compute_CI_at_multiple_times <- function(data,
       # Compute absolute risks in weighted subpopulation
       output <- compute_risk_at_multiple_times(
         data = ds_b,
+        id_name = id_name,
         horizon = horizon,
         elig_cohort = elig_cohort,
         model_PS = model_PS,
