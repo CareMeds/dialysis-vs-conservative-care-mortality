@@ -85,7 +85,7 @@ png(
   height = 2000,
   res = 300
 )
-plot(Predict(risk_model, fun = exp), ylab = "Hazard Ratio")
+print(plot(Predict(risk_model, fun = exp), ylab = "Hazard Ratio"))
 dev.off()
 
 # ################################################################################
